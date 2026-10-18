@@ -13,6 +13,8 @@ var Store = (function () {
     hiddenApps: [],         // app ids
     recent: [],             // item keys, most recent first
     showRecent: true,
+    groupApps: true,        // one row per app category
+    ambient: true,          // ambient screen after a few idle minutes
     webLinks: [
       { name: 'Wikipedia', url: 'https://en.m.wikipedia.org' },
       { name: 'Hacker News', url: 'https://news.ycombinator.com' }

@@ -24,7 +24,7 @@
             <span id="weather-temp" class="weather-temp"></span>
             <span id="weather-label" class="weather-label"></span>
           </div>
-          <div id="next-event" class="next-event" hidden></div>
+          <div id="ticker" class="ticker"></div>
         </div>
         <div class="shelf-info">
           <div id="shelf-kind" class="shelf-kind"></div>
@@ -35,6 +35,14 @@
       <main id="rows" class="rows"></main>
     </div>
   </div>
+
+  <section id="ambient" class="ambient" hidden>
+    <div class="ambient-content">
+      <div id="ambient-clock" class="ambient-clock"></div>
+      <div id="ambient-date" class="ambient-date"></div>
+      <div id="ambient-line" class="ambient-line"></div>
+    </div>
+  </section>
 
   <div class="topfade" aria-hidden="true"></div>
   <footer class="hints" id="hints"></footer>
@@ -61,6 +69,7 @@
   <script src="js/store.js"></script>
   <script src="js/weather.js"></script>
   <script src="js/icons.js"></script>
+  <script src="js/categories.js"></script>
   <script src="js/launcher.js"></script>
 </body>
 </html>

@@ -59,5 +59,21 @@ var Icons = (function () {
     return 'rgb(' + Math.round(color.r * k) + ',' + Math.round(color.g * k) + ',' + Math.round(color.b * k) + ')';
   }
 
-  return { svg: svg, glyphFor: glyphFor, sample: sample, tileBackground: tileBackground };
+  // Rotates a color's hue and scales its lightness, for a second wash tone.
+  function shiftHue(color, degrees, lightness) {
+    var r = color.r / 255, g = color.g / 255, b = color.b / 255;
+    var max = Math.max(r, g, b), min = Math.min(r, g, b);
+    var h = 0, s = 0, l = (max + min) / 2;
+    if (max !== min) {
+      var d = max - min;
+      s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+      h = max === r ? (g - b) / d + (g < b ? 6 : 0) : max === g ? (b - r) / d + 2 : (r - g) / d + 4;
+      h *= 60;
+    }
+    h = (h + degrees) % 360;
+    l = Math.min(1, l * lightness);
+    return 'hsl(' + Math.round(h) + ',' + Math.round(s * 100) + '%,' + Math.round(l * 100) + '%)';
+  }
+
+  return { svg: svg, glyphFor: glyphFor, sample: sample, tileBackground: tileBackground, shiftHue: shiftHue };
 })();

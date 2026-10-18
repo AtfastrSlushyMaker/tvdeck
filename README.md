@@ -12,6 +12,9 @@ TVDeck is an independent project and is not affiliated with TizenBrew or Samsung
 - **Recent row**: the last things you opened, most recent first.
 - **Inputs**: switch to HDMI 1–3 or Live TV from the launcher. Rename them or add more from your phone.
 - **All installed TV apps**: read straight from the TV and launched natively, with their real icons. Hide the ones you never use.
+- **Auto categories**: apps are sorted into Streaming, Video, Music, Sports, Kids, Games, News, Lifestyle and Utilities rows (by name, then Tizen's own category data). Turn it off in Settings for a single Apps row.
+- **Feels alive**: the backdrop takes its color from the focused app and slowly drifts; focus carries momentum, bumps at row edges, and idles with a soft float and glint; the status line under the clock rotates through your next event, what's playing and the weather.
+- **Ambient screen**: after 5 idle minutes the launcher fades to a large clock over a wash that cycles through your apps' colors. Any key wakes it.
 - **TizenBrew modules**: open your other modules (TizenTube, Twitch…) from the same screen.
 - **Send from phone**: scan the QR code, paste a link, and the TV offers to open it.
 - **At a glance**: upcoming events from any iCal feed (Google, iCloud, Outlook) and Home Assistant entities: toggle lights or switches, and see what's playing on media players.
@@ -67,7 +70,7 @@ The UI runs in a desktop browser with mock data:
 npm run dev
 ```
 
-Then open <http://localhost:5173>. Keyboard: arrows, Enter, Esc (Back),
+Then open <http://localhost:5173> (add `?ambient` to see the ambient screen after 4 seconds). Keyboard: arrows, Enter, Esc (Back),
 R/G/Y/B (color keys), PgUp/PgDn (channel up/down).
 
 To develop the phone page, widgets and inputs, run the service too:

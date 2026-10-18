@@ -39,7 +39,15 @@ var Platform = (function () {
     { id: '3202010022079', name: 'Stremio', icon: mockArt('#2a1a5e', '#fff', 'Stremio') },
     { id: '3201807016597', name: 'Apple TV', icon: mockArt('#1c1c1e', '#fff', 'tv', 64) },
     { id: 'com.samsung.tv.store', name: 'Apps' },
-    { id: 'org.tizen.browser', name: 'Internet' }
+    { id: 'org.tizen.browser', name: 'Internet' },
+    { id: 'mock.anghami', name: 'Anghami', icon: mockArt('#7c1fd1', '#fff', 'anghami') },
+    { id: 'mock.dazn', name: 'DAZN', icon: mockArt('#0c161c', '#f8fc00', 'DAZN', 64) },
+    { id: 'mock.bein', name: 'beIN SPORTS', icon: mockArt('#5c2d91', '#fff', 'beIN', 60) },
+    { id: 'mock.twitch', name: 'Twitch', icon: mockArt('#9146ff', '#fff', 'twitch') },
+    { id: 'mock.geforce', name: 'GeForce NOW', icon: mockArt('#111', '#76b900', 'GEFORCE NOW', 34) },
+    { id: 'mock.aljazeera', name: 'Al Jazeera', icon: mockArt('#fff', '#c48a1f', 'Al Jazeera', 40) },
+    { id: 'mock.smartthings', name: 'SmartThings' },
+    { id: 'mock.gallery', name: 'Gallery' }
   ];
 
   var MOCK_MODULES = [
@@ -62,7 +70,7 @@ var Platform = (function () {
         var apps = infos
           .filter(function (info) { return info.name && !isHiddenApp(info); })
           .map(function (info) {
-            return { id: info.id, name: info.name, icon: info.iconPath || '' };
+            return { id: info.id, name: info.name, icon: info.iconPath || '', categories: info.categories || [] };
           })
           .sort(function (a, b) { return a.name.localeCompare(b.name); });
         resolve(apps);

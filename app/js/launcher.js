@@ -45,7 +45,11 @@
     settingsList: document.getElementById('settings-list'),
     overlay: document.getElementById('overlay'),
     overlayCard: document.getElementById('overlay-card'),
-    nextEvent: document.getElementById('next-event'),
+    ticker: document.getElementById('ticker'),
+    ambient: document.getElementById('ambient'),
+    ambientClock: document.getElementById('ambient-clock'),
+    ambientDate: document.getElementById('ambient-date'),
+    ambientLine: document.getElementById('ambient-line'),
     shelfInfo: document.querySelector('.shelf-info'),
     shelfKind: document.getElementById('shelf-kind'),
     shelfTitle: document.getElementById('shelf-title'),
@@ -66,13 +70,18 @@
   var settingsItems = [];
   var settingsIndex = 0;
   var toastTimer = null;
+  var glanceSignature = '';
+  var IDLE_MS = 2500;               // focused tile starts its idle shimmer
+  var AMBIENT_MS = 5 * 60 * 1000;   // whole screen goes ambient
+  if (!Platform.isTV && /[?&]ambient\b/.test(location.search)) AMBIENT_MS = 4000; // desktop preview
 
   /* ---------- Items ---------- */
 
   function catalog() {
     var items = {};
     data.apps.forEach(function (app) {
-      items['app:' + app.id] = { key: 'app:' + app.id, kind: 'app', name: app.name, icon: app.icon, ref: app };
+      items['app:' + app.id] = { key: 'app:' + app.id, kind: 'app', name: app.name, icon: app.icon, ref: app,
+        category: Categories.categorize(app) };
     });
     data.modules.forEach(function (mod) {
       items['mod:' + mod.fullName] = { key: 'mod:' + mod.fullName, kind: 'mod', name: mod.appName || mod.name, badge: 'Module', ref: mod };
@@ -112,9 +121,7 @@
       { id: 'glance', title: 'At a glance', glance: true, items: glanceItems() },
       { id: 'recent', title: 'Recent', items: Store.get('showRecent') ? lookup(Store.get('recent')) : [] },
       { id: 'inputs', title: 'Inputs', items: data.inputs.map(function (input) { return items['key:' + input.key]; }) },
-      { id: 'apps', title: 'Apps', items: data.apps
-          .filter(function (app) { return hidden.indexOf(app.id) === -1; })
-          .map(function (app) { return items['app:' + app.id]; }) },
+    ].concat(appRows(items, hidden), [
       { id: 'modules', title: 'TizenBrew modules', items: data.modules
           .map(function (mod) { return items['mod:' + mod.fullName]; }) },
       { id: 'web', title: 'Web', items: Store.get('webLinks')
@@ -123,7 +130,7 @@
           { key: 'tool:phone', kind: 'tool', name: 'Send from phone', ref: 'phone' },
           { key: 'tool:settings', kind: 'tool', name: 'Settings', ref: 'settings' }
         ] }
-    ].filter(function (row) { return row.items.length || row.empty; });
+    ]).filter(function (row) { return row.items.length || row.empty; });
 
     // Keep each row's horizontal position across rebuilds.
     var old = {};
@@ -139,6 +146,18 @@
     rowIndex = 0;
     rows.forEach(function (row, i) { if (row.id === activeId) rowIndex = i; });
     if (!rows[rowIndex].items.length) rowIndex = firstFocusableRow(rowIndex, 1);
+  }
+
+  // One row per category, or a single "Apps" row when grouping is off.
+  function appRows(items, hidden) {
+    var visible = data.apps.filter(function (app) { return hidden.indexOf(app.id) === -1; });
+    function toItems(apps) {
+      return apps.map(function (app) { return items['app:' + app.id]; });
+    }
+    if (!Store.get('groupApps')) return [{ id: 'apps', title: 'Apps', apps: true, items: toItems(visible) }];
+    return Categories.group(visible).map(function (group) {
+      return { id: 'cat:' + group.name, title: group.name, apps: true, items: toItems(group.apps) };
+    });
   }
 
   function firstFocusableRow(from, step) {
@@ -326,7 +345,7 @@
 
   function describe(item) {
     switch (item.kind) {
-      case 'app': return 'App';
+      case 'app': return item.category === 'Other' ? 'App' : item.category;
       case 'mod': return 'TizenBrew module';
       case 'web': return hostOf(item.ref.url);
       case 'key': return item.ref.key === 'KEY_TV' ? 'Broadcast TV' : 'Input · ' + item.ref.key.replace('KEY_', '');
@@ -354,7 +373,8 @@
       var c = item.color;
       var gradient = ctx.createLinearGradient(0, 0, 16, 9);
       gradient.addColorStop(0, 'rgb(' + c.r + ',' + c.g + ',' + c.b + ')');
-      gradient.addColorStop(1, Icons.tileBackground(c));
+      gradient.addColorStop(0.55, Icons.tileBackground(c));
+      gradient.addColorStop(1, Icons.shiftHue(c, 38, 0.5));
       ctx.fillStyle = gradient;
       ctx.fillRect(0, 0, 16, 9);
     }
@@ -390,16 +410,35 @@
     }, ms || 320);
   }
 
-  function pressFocused() {
+  function focusedTile() {
     var row = rows[rowIndex];
-    var tile = row && row.trackEl && row.trackEl.children[row.col];
+    return row && row.trackEl ? row.trackEl.children[row.col] : null;
+  }
+
+  // Focus arriving from a direction carries a little momentum; hitting the
+  // end of a row or the top/bottom bumps against it.
+  var MOTION_CLASSES = ['nudge-left', 'nudge-right', 'nudge-up', 'nudge-down',
+    'bump-left', 'bump-right', 'bump-up', 'bump-down'];
+
+  function playMotion(name) {
+    var tile = focusedTile();
+    if (!tile) return;
+    MOTION_CLASSES.forEach(function (c) { tile.classList.remove(c); });
+    replay(tile, name);
+  }
+
+  function nudge(dir) { playMotion('nudge-' + dir); }
+  function bump(dir) { playMotion('bump-' + dir); }
+
+  function pressFocused() {
+    var tile = focusedTile();
     if (!tile) return;
     tile.classList.add('pressed');
     setTimeout(function () { tile.classList.remove('pressed'); }, 120);
   }
 
   function updateShelf() {
-    if (mode !== 'home') return;
+    if (mode !== 'home' || document.body.classList.contains('ambient-on')) return;
     var row = rows[rowIndex];
     var item = currentItem();
     var title = item ? item.name : 'TVDeck';
@@ -439,7 +478,7 @@
       }
       parts.push(hint('green', 'Settings'));
       if (row && row.id === 'favorites' && row.items.length > 1) parts.push(hint('yellow', 'Reorder'));
-      if (row && row.id === 'apps' && item) parts.push(hint('yellow', 'Hide app'));
+      if (row && row.apps && item) parts.push(hint('yellow', 'Hide app'));
       parts.push(hint('blue', 'Refresh'));
     }
     els.hints.innerHTML = parts.join('');
@@ -547,9 +586,9 @@
     ]).then(function (results) {
       data.calendar = results[0];
       data.ha = results[1] ? results[1].entities : [];
-      var next = data.calendar && data.calendar.events[0];
-      els.nextEvent.hidden = !next;
-      if (next) els.nextEvent.textContent = eventWhen(next) + ' · ' + next.title;
+      var signature = JSON.stringify([data.calendar, data.ha]);
+      if (signature === glanceSignature) return;
+      glanceSignature = signature;
       if (loaded && mode !== 'settings') {
         buildRows();
         render();
@@ -558,6 +597,7 @@
   }
 
   function refresh(announce) {
+    lastRefresh = Date.now();
     return Promise.all([
       Platform.listApps(),
       Platform.listModules(),
@@ -741,6 +781,13 @@
     }));
 
     items.push({ type: 'section', label: 'Layout' });
+    items.push(settingRow('Group apps by category', Store.get('groupApps') ? 'On' : 'Off', function () {
+      Store.set('groupApps', !Store.get('groupApps'));
+    }));
+    items.push(settingRow('Ambient screen when idle', Store.get('ambient') ? 'On' : 'Off', function () {
+      Store.set('ambient', !Store.get('ambient'));
+      noteActivity();
+    }));
     items.push(settingRow('Recent row', Store.get('showRecent') ? 'On' : 'Off', function () {
       Store.set('showRecent', !Store.get('showRecent'));
     }));
@@ -859,6 +906,8 @@
     var now = new Date();
     els.clock.textContent = formatTime(now);
     els.date.textContent = DAYS[now.getDay()] + ', ' + now.getDate() + ' ' + MONTHS[now.getMonth()];
+    els.ambientClock.textContent = els.clock.textContent;
+    els.ambientDate.textContent = els.date.textContent;
   }
 
   function loadWeather() {
@@ -869,10 +918,92 @@
     Weather.fetchCurrent(Store.get('city')).then(function (w) {
       els.weatherTemp.textContent = w.temp + '°';
       els.weatherLabel.textContent = w.label;
+      data.weather = w;
       els.weather.hidden = false;
     }).catch(function () {
       els.weather.hidden = true;
     });
+  }
+
+  /* ---------- Living details: shelf ticker, idle shimmer, ambient ---------- */
+
+  function greeting() {
+    var h = new Date().getHours();
+    return h < 5 ? 'Good night' : h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening';
+  }
+
+  function tickerLines() {
+    var lines = [];
+    var next = data.calendar && data.calendar.events[0];
+    if (next) lines.push(eventWhen(next) + ' · ' + next.title);
+    data.ha.forEach(function (e) {
+      if (e.domain === 'media_player' && e.state === 'playing' && e.mediaTitle) {
+        lines.push('Playing · ' + e.mediaTitle + (e.mediaArtist ? ' — ' + e.mediaArtist : ''));
+      }
+    });
+    if (data.weather) lines.push(data.weather.place + ' · ' + data.weather.label);
+    lines.push(greeting());
+    return lines;
+  }
+
+  var tickerIndex = 0;
+
+  // Cycles the small status line under the clock, cross-fading each change.
+  function rotateTicker() {
+    var lines = tickerLines();
+    tickerIndex = (tickerIndex + 1) % lines.length;
+    var text = lines[tickerIndex];
+    if (els.ticker.textContent !== text) {
+      els.ticker.textContent = text;
+      replay(els.ticker, 'tick');
+    }
+    els.ambientLine.textContent = lines[0];
+  }
+
+  var idleTimer = null;
+  var ambientTimer = null;
+
+  function noteActivity() {
+    document.body.classList.remove('idle');
+    clearTimeout(idleTimer);
+    clearTimeout(ambientTimer);
+    idleTimer = setTimeout(function () { document.body.classList.add('idle'); }, IDLE_MS);
+    if (Store.get('ambient')) ambientTimer = setTimeout(enterAmbient, AMBIENT_MS);
+  }
+
+  // Ambient: hide the launcher, show a large clock, and let the wash drift
+  // through the colors of the dock's apps.
+  var ambientCycle = null;
+
+  function enterAmbient() {
+    if (mode !== 'home') return noteActivity();
+    // Only art with real color makes a good wash; skip near-black/white logos.
+    var colored = [];
+    rows.forEach(function (row) {
+      row.items.forEach(function (item) {
+        var c = item.color;
+        if (!c || colored.indexOf(item) !== -1) return;
+        if (Math.max(c.r, c.g, c.b) - Math.min(c.r, c.g, c.b) > 40) colored.push(item);
+      });
+    });
+    var i = 0;
+    function nextColor() {
+      if (colored.length) setWash(colored[i++ % colored.length]);
+    }
+    animateIn(els.ambient);
+    document.body.classList.add('ambient-on');
+    rotateTicker();
+    nextColor();
+    clearInterval(ambientCycle);
+    ambientCycle = setInterval(nextColor, 10000);
+  }
+
+  function exitAmbient() {
+    clearInterval(ambientCycle);
+    document.body.classList.remove('ambient-on');
+    animateOut(els.ambient, 600);
+    updateShelf();
+    noteActivity();
   }
 
   /* ---------- Input ---------- */
@@ -905,22 +1036,27 @@
       return;
     }
 
+    var before = rowIndex;
     switch (key) {
       case KEY.LEFT:
-        if (row.col > 0) { row.col--; updateFocus(); }
+        if (row.col > 0) { row.col--; updateFocus(); nudge('left'); } else bump('left');
         break;
       case KEY.RIGHT:
-        if (row.col < row.items.length - 1) { row.col++; updateFocus(); }
+        if (row.col < row.items.length - 1) { row.col++; updateFocus(); nudge('right'); } else bump('right');
         break;
       case KEY.UP:
       case KEY.CH_UP:
         rowIndex = firstFocusableRow(rowIndex - 1, -1);
+        if (rowIndex === before) { bump('up'); break; }
         updateFocus();
+        nudge('up');
         break;
       case KEY.DOWN:
       case KEY.CH_DOWN:
         rowIndex = firstFocusableRow(rowIndex + 1, 1);
+        if (rowIndex === before) { bump('down'); break; }
         updateFocus();
+        nudge('down');
         break;
       case KEY.ENTER:
         if (item) {
@@ -938,7 +1074,7 @@
         if (row.id === 'favorites' && row.items.length > 1) {
           moving = true;
           updateFocus();
-        } else if (row.id === 'apps' && item) {
+        } else if (row.apps && item) {
           hideApp(item);
         }
         break;
@@ -969,6 +1105,13 @@
   }
 
   document.addEventListener('keydown', function (e) {
+    // Any key wakes the ambient screen and is swallowed.
+    if (document.body.classList.contains('ambient-on')) {
+      e.preventDefault();
+      exitAmbient();
+      return;
+    }
+    noteActivity();
     var key = e.keyCode;
     var typing = document.activeElement && document.activeElement.tagName === 'INPUT';
 
@@ -989,12 +1132,14 @@
     if (els.rendered) updateFocus();
   });
 
-  // Pick up newly installed apps when coming back from another app.
+  // Pick up newly installed apps when coming back from another app,
+  // at most every 15 s (visibility can flicker while the TV switches apps).
+  var lastRefresh = 0;
   document.addEventListener('visibilitychange', function () {
-    if (!document.hidden) {
-      tickClock();
-      refresh(false);
-    }
+    if (document.hidden) return;
+    tickClock();
+    noteActivity();
+    if (Date.now() - lastRefresh > 15000) refresh(false);
   });
 
   /* ---------- Boot ---------- */
@@ -1006,9 +1151,11 @@
   loadWeather();
   setInterval(loadWeather, 30 * 60 * 1000);
   setInterval(loadGlance, 30 * 1000);
+  setInterval(rotateTicker, 6000);
+  noteActivity();
   // Probe the service first so app icons can be served through it.
   Platform.service('/api/info').catch(ignore).then(function () {
-    refresh(false);
+    refresh(false).then(rotateTicker);
     pollInbox();
   });
 })();

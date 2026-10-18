@@ -29,6 +29,7 @@
   --ease: cubic-bezier(0.32, 0.72, 0, 1);
   --spring: cubic-bezier(0.34, 1.32, 0.64, 1);
   --press: cubic-bezier(0.4, 0, 0.6, 1);
+  --sine: cubic-bezier(0.45, 0, 0.55, 1);
   --t-focus: 480ms;
   --t-travel: 650ms;
 }
@@ -58,12 +59,19 @@ html, body {
 
 .wash {
   position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
+  top: -10%;
+  left: -10%;
+  width: 120%;
+  height: 120%;
   opacity: 0;
   transition: opacity 1100ms var(--ease);
+  animation: drift 26s var(--sine) infinite alternate;
+}
+
+/* The wash never sits still: a slow drift and swell, like light moving */
+@keyframes drift {
+  from { transform: translate(-3%, -2%) scale(1); }
+  to { transform: translate(3%, 2.5%) scale(1.1); }
 }
 
 .backdrop-shade {
@@ -115,7 +123,7 @@ html, body {
 
 .date,
 .weather,
-.next-event {
+.ticker {
   margin-top: 0.3vw;
   font-size: 0.95vw;
   color: var(--text-2);
@@ -127,11 +135,19 @@ html, body {
   font-weight: 600;
 }
 
-.next-event {
+.ticker {
   max-width: 24vw;
+  min-height: 1.3em;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.ticker.tick { animation: tick 700ms var(--ease) both; }
+
+@keyframes tick {
+  from { opacity: 0; transform: translateY(0.6vw); }
+  to { opacity: 1; transform: none; }
 }
 
 .shelf-info {
@@ -184,10 +200,15 @@ html, body {
 .row-track {
   display: flex;
   padding: 0.6vw var(--edge) 3.4vw;
-  transition: transform var(--t-travel) var(--ease);
+  transition: transform var(--t-travel) var(--ease), opacity 500ms var(--ease);
 }
 
 .row-track > * + * { margin-left: var(--gap); }
+
+/* Depth: rows you are not on recede a little */
+.row:not(.active) .row-track {
+  opacity: 0.62;
+}
 
 .row-empty {
   margin: 0.6vw var(--edge) 3.4vw;
@@ -346,6 +367,44 @@ html, body {
 .tile.focused.pressed {
   transform: scale(1.04);
   transition: transform 110ms var(--press);
+}
+
+/* Momentum: focus arriving from a direction overshoots slightly, then settles */
+.tile.nudge-right .tile-art { animation: nudge-right 520ms var(--ease); }
+.tile.nudge-left .tile-art { animation: nudge-left 520ms var(--ease); }
+.tile.nudge-down .tile-art { animation: nudge-down 520ms var(--ease); }
+.tile.nudge-up .tile-art { animation: nudge-up 520ms var(--ease); }
+
+@keyframes nudge-right { from { transform: translateX(-0.9vw); } to { transform: none; } }
+@keyframes nudge-left { from { transform: translateX(0.9vw); } to { transform: none; } }
+@keyframes nudge-down { from { transform: translateY(-0.7vw); } to { transform: none; } }
+@keyframes nudge-up { from { transform: translateY(0.7vw); } to { transform: none; } }
+
+/* Edge: pushing past the end of a row bumps against it */
+.tile.bump-right .tile-art { animation: bump-right 420ms var(--ease); }
+.tile.bump-left .tile-art { animation: bump-left 420ms var(--ease); }
+.tile.bump-down .tile-art { animation: bump-down 420ms var(--ease); }
+.tile.bump-up .tile-art { animation: bump-up 420ms var(--ease); }
+
+@keyframes bump-right { 30% { transform: translateX(0.7vw); } to { transform: none; } }
+@keyframes bump-left { 30% { transform: translateX(-0.7vw); } to { transform: none; } }
+@keyframes bump-down { 30% { transform: translateY(0.55vw); } to { transform: none; } }
+@keyframes bump-up { 30% { transform: translateY(-0.55vw); } to { transform: none; } }
+
+/* Idle: the focused tile breathes and light glints across it now and then */
+body.idle .tile.focused .tile-art { animation: float 4.8s var(--sine) infinite alternate; }
+body.idle .tile.focused .tile-shine { animation: glint 7s var(--ease) 0.4s infinite; }
+
+@keyframes float {
+  from { transform: translateY(0); }
+  to { transform: translateY(-0.28vw); }
+}
+
+@keyframes glint {
+  0% { opacity: 0; transform: translateX(-62%); }
+  6% { opacity: 1; }
+  30% { opacity: 0; transform: translateX(18%); }
+  100% { opacity: 0; transform: translateX(18%); }
 }
 
 .tile.moving { animation: jiggle 260ms var(--press) infinite alternate; }
@@ -739,3 +798,60 @@ body.booting .tile-art {
     transition-duration: 1ms !important;
   }
 }
+
+/* Ambient screen: launcher fades away, the wash drifts through app colors */
+.ambient {
+  position: fixed;
+  z-index: 4;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  transition: opacity 1400ms var(--ease);
+}
+
+.ambient.is-out { opacity: 0; }
+
+.ambient-content {
+  position: absolute;
+  left: var(--edge);
+  bottom: 6vw;
+  animation: wander 60s var(--sine) infinite alternate;
+}
+
+/* Slow wander keeps static pixels moving on the panel */
+@keyframes wander {
+  from { transform: translate(0, 0); }
+  to { transform: translate(3vw, -2.5vw); }
+}
+
+.ambient-clock {
+  font-size: 9vw;
+  font-weight: 600;
+  letter-spacing: -0.3vw;
+  line-height: 1;
+}
+
+.ambient-date {
+  margin-top: 0.8vw;
+  font-size: 1.7vw;
+  font-weight: 500;
+}
+
+.ambient-line {
+  margin-top: 0.5vw;
+  font-size: 1.3vw;
+  color: var(--text-2);
+}
+
+.viewport,
+.hints,
+.topfade { transition: opacity 900ms var(--ease); }
+
+body.ambient-on .viewport,
+body.ambient-on .hints,
+body.ambient-on .topfade { opacity: 0; }
+
+.backdrop-shade { transition: opacity 1400ms var(--ease); }
+body.ambient-on .backdrop-shade { opacity: 0.45; }
+body.ambient-on .wash { transition-duration: 3500ms; }
