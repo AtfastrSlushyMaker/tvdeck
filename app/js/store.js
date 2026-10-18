@@ -12,6 +12,8 @@ var Store = (function () {
     favorites: [],          // item keys, e.g. "app:3201907018807", "mod:npm/foo", "web:0"
     hiddenApps: [],         // app ids
     recent: [],             // item keys, most recent first
+    openedAt: {},           // item key -> last opened (ms), for the shelf
+    sounds: false,          // synthesized UI sounds
     showRecent: true,
     groupApps: true,        // one row per app category
     ambient: true,          // ambient screen after a few idle minutes

@@ -14,6 +14,8 @@ TVDeck is an independent project and is not affiliated with TizenBrew or Samsung
 - **All installed TV apps**: read straight from the TV and launched natively, with their real icons. Hide the ones you never use.
 - **Auto categories**: apps are sorted into Streaming, Video, Music, Sports, Kids, Games, News, Lifestyle and Utilities rows (by name, then Tizen's own category data). Turn it off in Settings for a single Apps row.
 - **Feels alive**: the backdrop takes its color from the focused app and slowly drifts; focus carries momentum, bumps at row edges, and idles with a soft float and glint; the status line under the clock rotates through your next event, what's playing and the weather.
+- **Polished motion**: exits accelerate away (ease-in) faster than entrances arrive; holding an arrow switches to quick, simple motion; logos fade in once and parallax slightly against their tiles; hints step aside after a few idle seconds.
+- **UI sounds** (optional, off by default): a soft tick, click and edge thud, synthesized with Web Audio.
 - **Ambient screen**: after 5 idle minutes the launcher fades to a large clock over a wash that cycles through your apps' colors. Any key wakes it.
 - **TizenBrew modules**: open your other modules (TizenTube, Twitch…) from the same screen.
 - **Send from phone**: scan the QR code, paste a link, and the TV offers to open it.

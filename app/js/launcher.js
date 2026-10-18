@@ -72,6 +72,8 @@
   var toastTimer = null;
   var glanceSignature = '';
   var IDLE_MS = 2500;               // focused tile starts its idle shimmer
+  var CALM_MS = 6000;               // remote-key hints step aside
+  var REPEAT_MS = 190;              // arrows closer than this = holding the key
   var AMBIENT_MS = 5 * 60 * 1000;   // whole screen goes ambient
   if (!Platform.isTV && /[?&]ambient\b/.test(location.search)) AMBIENT_MS = 4000; // desktop preview
 
@@ -176,6 +178,9 @@
     return node;
   }
 
+  // Icons seen before skip the fade, so re-rendering rows never flickers.
+  var seenIcons = {};
+
   // App art when there is an icon (caption shows on focus, like tvOS);
   // otherwise a line icon with the name inside the tile.
   function renderTile(item) {
@@ -192,10 +197,12 @@
     var src = Platform.iconUrl(item.icon);
     if (src) {
       tile.classList.add('has-art');
-      var img = el('img', 'tile-icon');
+      var img = el('img', seenIcons[src] ? 'tile-icon loaded' : 'tile-icon');
       img.alt = '';
       img.crossOrigin = 'anonymous';
       img.onload = function () {
+        seenIcons[src] = true;
+        img.classList.add('loaded');
         var color = Icons.sample(img);
         item.img = img;
         item.color = color;
@@ -203,7 +210,11 @@
         else if (color) art.style.backgroundColor = Icons.tileBackground(color);
         if (currentItem() === item) updateShelf();
       };
-      img.onerror = showGlyph;
+      img.onerror = function () {
+        item.iconFailed = true;
+        showGlyph();
+        if (currentItem() === item) updateShelf();
+      };
       img.src = src;
       art.appendChild(img);
     } else {
@@ -343,12 +354,27 @@
     return url.replace(/^https?:\/\/(www\.)?/, '').split('/')[0];
   }
 
+  function timeAgo(ms) {
+    var min = Math.round((Date.now() - ms) / 60000);
+    if (min < 1) return 'just now';
+    if (min < 60) return min + ' min ago';
+    var h = Math.round(min / 60);
+    if (h < 24) return h + (h === 1 ? ' hour ago' : ' hours ago');
+    var d = Math.round(h / 24);
+    return d === 1 ? 'yesterday' : d + ' days ago';
+  }
+
+  function withOpened(item, text) {
+    var at = Store.get('openedAt')[item.key];
+    return at ? text + ' · Opened ' + timeAgo(at) : text;
+  }
+
   function describe(item) {
     switch (item.kind) {
-      case 'app': return item.category === 'Other' ? 'App' : item.category;
-      case 'mod': return 'TizenBrew module';
-      case 'web': return hostOf(item.ref.url);
-      case 'key': return item.ref.key === 'KEY_TV' ? 'Broadcast TV' : 'Input · ' + item.ref.key.replace('KEY_', '');
+      case 'app': return withOpened(item, item.category === 'Other' ? 'App' : item.category);
+      case 'mod': return withOpened(item, 'TizenBrew module');
+      case 'web': return withOpened(item, hostOf(item.ref.url));
+      case 'key': return withOpened(item, item.ref.key === 'KEY_TV' ? 'Broadcast TV' : 'Input · ' + item.ref.key.replace('KEY_', ''));
       case 'tool': return item.ref === 'phone' ? 'Scan a code to send links from your phone' : 'Startup, widgets and layout';
       case 'calendar': return 'Your calendar';
       case 'media': return item.ref.mediaTitle ? item.ref.mediaTitle + (item.ref.mediaArtist ? ' · ' + item.ref.mediaArtist : '') : item.ref.state;
@@ -363,6 +389,8 @@
   // Paints a gradient from the focused art's average color into a 16x9
   // canvas; upscaled to full screen it is a soft wash for almost no GPU cost.
   function setWash(item) {
+    // Art still loading: keep the current wash rather than flashing to black.
+    if (item && !item.color && item.icon && !item.iconFailed) return;
     var key = item && item.color ? item.key : null;
     if (key === washKey) return;
     washKey = key;
@@ -427,8 +455,8 @@
     replay(tile, name);
   }
 
-  function nudge(dir) { playMotion('nudge-' + dir); }
-  function bump(dir) { playMotion('bump-' + dir); }
+  function nudge(dir) { playMotion('nudge-' + dir); Sounds.play('move'); }
+  function bump(dir) { playMotion('bump-' + dir); Sounds.play('edge'); }
 
   function pressFocused() {
     var tile = focusedTile();
@@ -498,10 +526,23 @@
 
   /* ---------- Actions ---------- */
 
+  var rowsDirty = false;      // Recent changed while an app was opening
+
   function rememberRecent(item) {
     var recent = Store.get('recent').filter(function (key) { return key !== item.key; });
     recent.unshift(item.key);
     Store.set('recent', recent.slice(0, MAX_RECENT));
+    var openedAt = Store.get('openedAt');
+    openedAt[item.key] = Date.now();
+    Store.set('openedAt', openedAt);
+    rowsDirty = true;
+  }
+
+  function rebuildIfDirty() {
+    if (!rowsDirty || mode !== 'home') return;
+    rowsDirty = false;
+    buildRows();
+    render();
   }
 
   function open(item) {
@@ -533,10 +574,9 @@
         else openSettings();
         break;
     }
-    if (PINNABLE[item.kind]) {
-      buildRows();
-      render();
-    }
+    // Rebuilding now would flash the rows just as the app opens; do it once
+    // we are visible again (or shortly after, when nothing actually left).
+    if (PINNABLE[item.kind]) setTimeout(rebuildIfDirty, Platform.isTV ? 2500 : 700);
   }
 
   function togglePin(item) {
@@ -608,6 +648,7 @@
       data.modules = results[1];
       data.inputs = results[2];
       data.tizenbrew = results[3];
+      rowsDirty = false;
       buildRows();
       if (!loaded) {
         loaded = true;
@@ -682,12 +723,15 @@
       card.appendChild(el('p', item.type === 'url' ? 'message-url' : 'message-text', item.value));
     }
 
+    document.body.classList.add('sheet-on');
     animateIn(els.overlay);
     updateFocus();
   }
 
   function closeOverlay() {
-    animateOut(els.overlay, 280);
+    document.body.classList.remove('sheet-on');
+    Sounds.play('back');
+    animateOut(els.overlay, 260);
     overlay = null;
     mode = 'home';
     updateFocus();
@@ -784,6 +828,11 @@
     items.push(settingRow('Group apps by category', Store.get('groupApps') ? 'On' : 'Off', function () {
       Store.set('groupApps', !Store.get('groupApps'));
     }));
+    items.push(settingRow('UI sounds', Store.get('sounds') ? 'On' : 'Off', function () {
+      Store.set('sounds', !Store.get('sounds'));
+      Sounds.setEnabled(Store.get('sounds'));
+      Sounds.play('select');
+    }));
     items.push(settingRow('Ambient screen when idle', Store.get('ambient') ? 'On' : 'Off', function () {
       Store.set('ambient', !Store.get('ambient'));
       noteActivity();
@@ -854,13 +903,20 @@
     settingsItems.forEach(function (item, i) {
       if (item.el) item.el.classList.toggle('focused', i === settingsIndex);
     });
+    // Glide the list so the focused row sits in the middle band of the panel.
     var node = settingsItems[settingsIndex] && settingsItems[settingsIndex].el;
-    if (node && node.scrollIntoView) node.scrollIntoView({ block: 'nearest' });
+    if (!node) return;
+    var panelH = els.settingsList.parentNode.clientHeight;
+    var listH = els.settingsList.offsetHeight;
+    var target = node.offsetTop + node.offsetHeight / 2 - panelH / 2;
+    var offset = Math.max(0, Math.min(target, listH - panelH));
+    els.settingsList.style.transform = 'translateY(' + (-offset) + 'px)';
   }
 
   function openSettings() {
     mode = 'settings';
     settingsIndex = 0;
+    document.body.classList.add('sheet-on');
     animateIn(els.settings);
     replay(els.settings, 'opening');
     clearTimeout(els.settings.openTimer);
@@ -871,7 +927,8 @@
 
   function closeSettings() {
     mode = 'home';
-    animateOut(els.settings, 320);
+    document.body.classList.remove('sheet-on');
+    animateOut(els.settings, 260);
     buildRows();
     render();
     showNextMessage();
@@ -963,11 +1020,16 @@
   var idleTimer = null;
   var ambientTimer = null;
 
+  var calmTimer = null;
+
   function noteActivity() {
     document.body.classList.remove('idle');
+    document.body.classList.remove('calm');
     clearTimeout(idleTimer);
     clearTimeout(ambientTimer);
+    clearTimeout(calmTimer);
     idleTimer = setTimeout(function () { document.body.classList.add('idle'); }, IDLE_MS);
+    calmTimer = setTimeout(function () { document.body.classList.add('calm'); }, CALM_MS);
     if (Store.get('ambient')) ambientTimer = setTimeout(enterAmbient, AMBIENT_MS);
   }
 
@@ -1001,9 +1063,26 @@
   function exitAmbient() {
     clearInterval(ambientCycle);
     document.body.classList.remove('ambient-on');
-    animateOut(els.ambient, 600);
+    animateOut(els.ambient, 460);
     updateShelf();
     noteActivity();
+  }
+
+  /* ---------- Hold-to-scroll ---------- */
+
+  // Remotes repeat arrows while held (often without e.repeat), so time them.
+  var lastArrow = { key: 0, at: 0 };
+  var fastTimer = null;
+
+  function trackRepeat(key) {
+    if (key < KEY.LEFT || key > KEY.DOWN) return;
+    var now = Date.now();
+    if (key === lastArrow.key && now - lastArrow.at < REPEAT_MS) {
+      document.body.classList.add('fast');
+    }
+    lastArrow = { key: key, at: now };
+    clearTimeout(fastTimer);
+    fastTimer = setTimeout(function () { document.body.classList.remove('fast'); }, REPEAT_MS + 80);
   }
 
   /* ---------- Input ---------- */
@@ -1061,6 +1140,7 @@
       case KEY.ENTER:
         if (item) {
           pressFocused();
+          Sounds.play('select');
           setTimeout(function () { open(item); }, 140);
         }
         break;
@@ -1089,16 +1169,20 @@
       case KEY.UP:
         settingsIndex = nextSelectable(settingsIndex, -1);
         focusSetting();
+        Sounds.play('move');
         break;
       case KEY.DOWN:
         settingsIndex = nextSelectable(settingsIndex, 1);
         focusSetting();
+        Sounds.play('move');
         break;
       case KEY.ENTER:
+        Sounds.play('select');
         activateSetting();
         break;
       case KEY.BACK:
       case KEY.GREEN:
+        Sounds.play('back');
         closeSettings();
         break;
     }
@@ -1113,6 +1197,7 @@
     }
     noteActivity();
     var key = e.keyCode;
+    trackRepeat(key);
     var typing = document.activeElement && document.activeElement.tagName === 'INPUT';
 
     if (typing) {
@@ -1140,11 +1225,13 @@
     tickClock();
     noteActivity();
     if (Date.now() - lastRefresh > 15000) refresh(false);
+    else rebuildIfDirty();
   });
 
   /* ---------- Boot ---------- */
 
   els.settingsGlyph.innerHTML = Icons.svg('settings');
+  Sounds.setEnabled(Store.get('sounds'));
   Platform.registerKeys(['ColorF0Red', 'ColorF1Green', 'ColorF2Yellow', 'ColorF3Blue', 'ChannelUp', 'ChannelDown']);
   tickClock();
   setInterval(tickClock, 5000);

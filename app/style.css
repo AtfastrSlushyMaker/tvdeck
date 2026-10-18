@@ -30,6 +30,7 @@
   --spring: cubic-bezier(0.34, 1.32, 0.64, 1);
   --press: cubic-bezier(0.4, 0, 0.6, 1);
   --sine: cubic-bezier(0.45, 0, 0.55, 1);
+  --ease-in: cubic-bezier(0.5, 0, 0.75, 0); /* exits: accelerate away, faster than entrances */
   --t-focus: 480ms;
   --t-travel: 650ms;
 }
@@ -118,7 +119,8 @@ html, body {
 .clock {
   font-size: 1.9vw;
   font-weight: 600;
-  letter-spacing: -0.02vw;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
 }
 
 .date,
@@ -169,7 +171,7 @@ html, body {
   margin: 0.4vw 0 0.3vw;
   font-size: 3.8vw;
   font-weight: 700;
-  letter-spacing: -0.06vw;
+  letter-spacing: -0.022em;
   line-height: 1.05;
   white-space: nowrap;
   overflow: hidden;
@@ -275,7 +277,12 @@ html, body {
   margin: auto;
   max-width: 62%;
   max-height: 62%;
+  opacity: 0;
+  transition: opacity 600ms var(--ease);
 }
+
+/* Icons fade in once decoded instead of popping */
+.tile-icon.loaded { opacity: 1; }
 
 .tile.full-bleed .tile-icon {
   width: 100%;
@@ -336,6 +343,7 @@ html, body {
   margin-top: 0.75vw;
   font-size: 1.05vw;
   font-weight: 500;
+  letter-spacing: -0.005em;
   text-align: center;
   white-space: nowrap;
   overflow: hidden;
@@ -554,8 +562,8 @@ body.scrolled .topfade { opacity: 1; }
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 1vw 2.4vw rgba(0, 0, 0, 0.5);
   pointer-events: none;
   opacity: 0;
-  transform: translateY(-1.4vw) scale(0.94);
-  transition: opacity 260ms var(--ease), transform 260ms var(--ease);
+  transform: translateY(-1vw) scale(0.96);
+  transition: opacity 200ms var(--ease-in), transform 220ms var(--ease-in);
 }
 
 .toast.show {
@@ -573,15 +581,25 @@ body.scrolled .topfade { opacity: 1; }
   bottom: 0;
   left: 0;
   display: flex;
-  background: #000;
+  background: linear-gradient(90deg, rgba(0, 0, 0, 0.74) 0%, rgba(0, 0, 0, 0.84) 34%, rgba(0, 0, 0, 0.9) 100%);
 }
 
-.settings { transition: opacity 380ms var(--ease); }
-.settings.is-out { opacity: 0; }
+.settings { transition: opacity 420ms var(--ease); }
+
+/* The launcher sinks back behind the settings sheet */
+body.sheet-on .viewport {
+  opacity: 0.35;
+  transform: scale(0.96);
+}
+
+.settings.is-out {
+  opacity: 0;
+  transition: opacity 240ms var(--ease-in);
+}
 
 .settings-side {
   transition: transform 700ms var(--ease);
-  flex: 0 0 42%;
+  flex: 0 0 32%;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -589,7 +607,10 @@ body.scrolled .topfade { opacity: 1; }
   color: var(--text-2);
 }
 
-.settings.is-out .settings-side { transform: translateX(-3vw); }
+.settings.is-out .settings-side {
+  transform: translateX(-2vw);
+  transition: transform 240ms var(--ease-in);
+}
 
 .settings-glyph {
   width: 13vw;
@@ -613,9 +634,19 @@ body.scrolled .topfade { opacity: 1; }
 
 .settings-panel {
   flex: 1;
+  position: relative;
   height: 100%;
-  padding: 7vw 6vw 7vw 0;
+  margin-right: 6vw;
   overflow: hidden;
+  /* Rows fade out at the edges instead of being cut */
+  -webkit-mask-image: linear-gradient(180deg, transparent 0, #000 9%, #000 91%, transparent 100%);
+  mask-image: linear-gradient(180deg, transparent 0, #000 9%, #000 91%, transparent 100%);
+}
+
+/* The list glides (transform) to keep the focused row in view */
+.settings-list {
+  padding: 9vh 1.2vw;
+  transition: transform 550ms var(--ease);
 }
 
 .setting-section {
@@ -695,7 +726,10 @@ body.scrolled .topfade { opacity: 1; }
   transition: opacity 320ms var(--ease);
 }
 
-.overlay.is-out { opacity: 0; }
+.overlay.is-out {
+  opacity: 0;
+  transition: opacity 220ms var(--ease-in) 40ms;
+}
 
 .overlay-card {
   max-width: 60vw;
@@ -711,8 +745,8 @@ body.scrolled .topfade { opacity: 1; }
 
 .overlay.is-out .overlay-card {
   opacity: 0;
-  transform: translateY(2vw) scale(0.94);
-  transition: transform 280ms var(--ease), opacity 220ms var(--ease);
+  transform: translateY(1.2vw) scale(0.96);
+  transition: transform 220ms var(--ease-in), opacity 200ms var(--ease-in);
 }
 
 .overlay-card h2 {
@@ -820,7 +854,10 @@ body.booting .tile-art {
   transition: opacity 1400ms var(--ease);
 }
 
-.ambient.is-out { opacity: 0; }
+.ambient.is-out {
+  opacity: 0;
+  transition: opacity 450ms var(--ease-in);
+}
 
 .ambient-content {
   position: absolute;
@@ -838,8 +875,9 @@ body.booting .tile-art {
 .ambient-clock {
   font-size: 9vw;
   font-weight: 600;
-  letter-spacing: -0.3vw;
+  letter-spacing: -0.035em;
   line-height: 1;
+  font-variant-numeric: tabular-nums;
 }
 
 .ambient-date {
@@ -854,7 +892,8 @@ body.booting .tile-art {
   color: var(--text-2);
 }
 
-.viewport,
+.viewport { transition: opacity 700ms var(--ease), transform 700ms var(--ease); }
+
 .hints,
 .topfade { transition: opacity 900ms var(--ease); }
 
@@ -865,3 +904,38 @@ body.ambient-on .topfade { opacity: 0; }
 .backdrop-shade { transition: opacity 1400ms var(--ease); }
 body.ambient-on .backdrop-shade { opacity: 0.45; }
 body.ambient-on .wash { transition-duration: 3500ms; }
+
+/* Overlays push the launcher back too */
+body.sheet-on .hints { opacity: 0.4; }
+
+/* Hints step aside once you stop pressing keys; any key brings them back */
+body.calm .hints { opacity: 0; }
+
+/* Hold-to-scroll: while an arrow repeats, motion gets short and simple */
+body.fast {
+  --t-focus: 140ms;
+  --t-travel: 200ms;
+}
+
+body.fast .tile .tile-art,
+body.fast .tile .tile-icon { animation: none !important; }
+body.fast .tile.focused .tile-shine { transition: opacity 150ms var(--ease); }
+body.fast .shelf-info.swap { animation-duration: 160ms; }
+body.fast .tile-caption { transition-duration: 120ms; }
+
+/* Parallax: a logo lags behind its tile a touch, so the tile reads as layered */
+.tile:not(.full-bleed).nudge-right .tile-icon { animation: parallax-x 700ms var(--ease); --from: 0.45vw; }
+.tile:not(.full-bleed).nudge-left .tile-icon { animation: parallax-x 700ms var(--ease); --from: -0.45vw; }
+.tile:not(.full-bleed).nudge-down .tile-icon { animation: parallax-y 700ms var(--ease); --from: 0.35vw; }
+.tile:not(.full-bleed).nudge-up .tile-icon { animation: parallax-y 700ms var(--ease); --from: -0.35vw; }
+
+@keyframes parallax-x { from { transform: translateX(var(--from)); } to { transform: none; } }
+@keyframes parallax-y { from { transform: translateY(var(--from)); } to { transform: none; } }
+
+/* Idle depth: the logo floats a hair more than its tile */
+body.idle .tile.focused:not(.full-bleed) .tile-icon { animation: float-deep 6.5s var(--sine) infinite alternate; }
+
+@keyframes float-deep {
+  from { transform: translateY(0) scale(1); }
+  to { transform: translateY(-0.1vw) scale(1.015); }
+}
