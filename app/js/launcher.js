@@ -35,8 +35,8 @@
     rows: document.getElementById('rows'),
     clock: document.getElementById('clock'),
     date: document.getElementById('date'),
+    page: document.getElementById('page'),
     weather: document.getElementById('weather'),
-    weatherIcon: document.getElementById('weather-icon'),
     weatherTemp: document.getElementById('weather-temp'),
     weatherLabel: document.getElementById('weather-label'),
     hints: document.getElementById('hints'),
@@ -44,7 +44,14 @@
     settings: document.getElementById('settings'),
     settingsList: document.getElementById('settings-list'),
     overlay: document.getElementById('overlay'),
-    overlayCard: document.getElementById('overlay-card')
+    overlayCard: document.getElementById('overlay-card'),
+    nextEvent: document.getElementById('next-event'),
+    shelfInfo: document.querySelector('.shelf-info'),
+    shelfKind: document.getElementById('shelf-kind'),
+    shelfTitle: document.getElementById('shelf-title'),
+    shelfMeta: document.getElementById('shelf-meta'),
+    washes: document.querySelectorAll('.wash'),
+    settingsGlyph: document.getElementById('settings-glyph')
   };
 
   var data = { apps: [], modules: [], inputs: [], calendar: null, ha: [], tizenbrew: null };
@@ -101,7 +108,7 @@
 
     var next = [
       { id: 'favorites', title: 'Favorites', featured: true, items: lookup(Store.get('favorites')),
-        empty: 'Press RED on any tile to pin it here' },
+        empty: 'Press RED on any tile to pin it to the dock' },
       { id: 'glance', title: 'At a glance', glance: true, items: glanceItems() },
       { id: 'recent', title: 'Recent', items: Store.get('showRecent') ? lookup(Store.get('recent')) : [] },
       { id: 'inputs', title: 'Inputs', items: data.inputs.map(function (input) { return items['key:' + input.key]; }) },
@@ -119,10 +126,12 @@
     ].filter(function (row) { return row.items.length || row.empty; });
 
     // Keep each row's horizontal position across rebuilds.
-    var oldCols = {};
-    rows.forEach(function (row) { oldCols[row.id] = row.col; });
+    var old = {};
+    rows.forEach(function (row) { old[row.id] = row; });
     next.forEach(function (row) {
-      row.col = Math.min(oldCols[row.id] || 0, Math.max(0, row.items.length - 1));
+      var prev = old[row.id] || {};
+      row.col = Math.min(prev.col || 0, Math.max(0, row.items.length - 1));
+      row.shift = prev.shift || 0;
     });
 
     var activeId = rows[rowIndex] ? rows[rowIndex].id : null;
@@ -148,20 +157,42 @@
     return node;
   }
 
+  // App art when there is an icon (caption shows on focus, like tvOS);
+  // otherwise a line icon with the name inside the tile.
   function renderTile(item) {
     var tile = el('div', 'tile');
-    if (item.badge) tile.appendChild(el('div', 'tile-kind', item.badge));
+    var art = el('div', 'tile-art');
+    tile.appendChild(art);
+
+    function showGlyph() {
+      tile.classList.remove('has-art');
+      art.innerHTML = '<div class="tile-glyph">' + Icons.svg(Icons.glyphFor(item)) + '</div>';
+      art.appendChild(el('div', 'tile-label', item.name));
+    }
 
     var src = Platform.iconUrl(item.icon);
     if (src) {
+      tile.classList.add('has-art');
       var img = el('img', 'tile-icon');
       img.alt = '';
-      img.onerror = function () { img.parentNode && img.parentNode.removeChild(img); };
+      img.crossOrigin = 'anonymous';
+      img.onload = function () {
+        var color = Icons.sample(img);
+        item.img = img;
+        item.color = color;
+        if (color && color.fullBleed) tile.classList.add('full-bleed');
+        else if (color) art.style.backgroundColor = Icons.tileBackground(color);
+        if (currentItem() === item) updateShelf();
+      };
+      img.onerror = showGlyph;
       img.src = src;
-      tile.appendChild(img);
+      art.appendChild(img);
+    } else {
+      showGlyph();
     }
 
-    tile.appendChild(el('div', 'tile-name', item.name));
+    art.appendChild(el('div', 'tile-shine'));
+    tile.appendChild(el('div', 'tile-caption', item.name));
     return tile;
   }
 
@@ -206,19 +237,22 @@
   }
 
   function render() {
-    var inner = el('div', 'rows-inner');
+    var inner = document.createDocumentFragment();
 
-    rows.forEach(function (row) {
-      var rowEl = el('section', 'row' + (row.featured ? ' featured' : '') + (row.glance ? ' glance' : ''));
-      rowEl.appendChild(el('h2', 'row-title', row.title));
+    rows.forEach(function (row, r) {
+      var rowEl = el('section', 'row' + (row.featured ? ' dock' : '') + (row.glance ? ' glance' : ''));
+      rowEl.style.setProperty('--r', Math.min(r, 4));
+      if (!row.featured) rowEl.appendChild(el('h2', 'row-title', row.title));
 
       row.trackEl = null;
       if (!row.items.length) {
         rowEl.appendChild(el('div', 'row-empty', row.empty));
       } else {
         var track = el('div', 'row-track');
-        row.items.forEach(function (item) {
-          track.appendChild(row.glance ? renderGlance(item) : renderTile(item));
+        row.items.forEach(function (item, i) {
+          var tile = row.glance ? renderGlance(item) : renderTile(item);
+          tile.style.setProperty('--i', Math.min(i, 6));
+          track.appendChild(tile);
         });
         rowEl.appendChild(track);
         row.trackEl = track;
@@ -230,7 +264,7 @@
 
     els.rows.innerHTML = '';
     els.rows.appendChild(inner);
-    els.inner = inner;
+    els.rendered = true;
     updateFocus();
   }
 
@@ -244,30 +278,136 @@
         tiles[i].classList.toggle('focused', active && i === row.col);
         tiles[i].classList.toggle('moving', active && moving && i === row.col);
       }
-      // Keep the focused tile in view, two tiles in from the left edge.
-      var anchor = tiles[Math.max(0, row.col - 2)];
-      var shift = anchor ? anchor.offsetLeft - tiles[0].offsetLeft : 0;
-      row.trackEl.style.transform = 'translateX(' + (-shift) + 'px)';
+      // Slide the row only when the focused tile would leave the screen.
+      var focusedTile = tiles[row.col];
+      if (focusedTile) {
+        var visible = row.trackEl.clientWidth - 2 * parseFloat(getComputedStyle(row.trackEl).paddingLeft);
+        var left = focusedTile.offsetLeft - tiles[0].offsetLeft;
+        var right = left + focusedTile.offsetWidth;
+        row.shift = row.shift || 0;
+        if (left < row.shift) row.shift = left;
+        else if (right > row.shift + visible) row.shift = right - visible;
+        row.trackEl.style.transform = 'translateX(' + (-row.shift) + 'px)';
+      }
     });
 
-    // Scroll vertically in whole rows, only as far as needed to show the active row.
+    // The dock row shows the whole Top Shelf; further rows scroll it away,
+    // in whole rows, only as far as needed to show the active row.
     var activeRow = rows[rowIndex];
-    if (activeRow && els.inner) {
-      var base = rows[0].el.offsetTop;
-      var rowTop = activeRow.el.offsetTop - base;
+    if (activeRow && els.rendered) {
+      var pageTop = els.page.getBoundingClientRect().top;
+      var topOf = function (r) { return rows[r].el.getBoundingClientRect().top - pageTop; };
+      var margin = window.innerHeight * 0.07;
+      var viewH = window.innerHeight - els.hints.offsetHeight;
+      var rowTop = topOf(rowIndex);
       var rowBottom = rowTop + activeRow.el.offsetHeight;
-      var viewH = els.rows.clientHeight;
-      if (rowTop < scrollY) {
-        scrollY = rowTop;
+      if (rowIndex === 0) {
+        scrollY = 0;
+      } else if (rowTop - margin < scrollY) {
+        scrollY = rowTop - margin;
       } else if (rowBottom > scrollY + viewH) {
-        for (var r = 0; r <= rowIndex; r++) {
-          var top = rows[r].el.offsetTop - base;
+        for (var r = 1; r <= rowIndex; r++) {
+          var top = topOf(r) - margin;
           if (rowBottom - top <= viewH) { scrollY = top; break; }
         }
       }
-      els.inner.style.transform = 'translateY(' + (-scrollY) + 'px)';
+      els.page.style.transform = 'translateY(' + (-scrollY) + 'px)';
+      document.body.classList.toggle('scrolled', scrollY > 0);
     }
+    updateShelf();
     renderHints();
+  }
+
+  /* ---------- Top Shelf ---------- */
+
+  function hostOf(url) {
+    return url.replace(/^https?:\/\/(www\.)?/, '').split('/')[0];
+  }
+
+  function describe(item) {
+    switch (item.kind) {
+      case 'app': return 'App';
+      case 'mod': return 'TizenBrew module';
+      case 'web': return hostOf(item.ref.url);
+      case 'key': return item.ref.key === 'KEY_TV' ? 'Broadcast TV' : 'Input · ' + item.ref.key.replace('KEY_', '');
+      case 'tool': return item.ref === 'phone' ? 'Scan a code to send links from your phone' : 'Startup, widgets and layout';
+      case 'calendar': return 'Your calendar';
+      case 'media': return item.ref.mediaTitle ? item.ref.mediaTitle + (item.ref.mediaArtist ? ' · ' + item.ref.mediaArtist : '') : item.ref.state;
+      case 'ha': return item.ref.state + (item.ref.unit ? ' ' + item.ref.unit : '');
+    }
+    return '';
+  }
+
+  var washIndex = 0;
+  var washKey = null;
+
+  // Paints a gradient from the focused art's average color into a 16x9
+  // canvas; upscaled to full screen it is a soft wash for almost no GPU cost.
+  function setWash(item) {
+    var key = item && item.color ? item.key : null;
+    if (key === washKey) return;
+    washKey = key;
+    var next = els.washes[1 - washIndex];
+    var ctx = next.getContext('2d');
+    ctx.clearRect(0, 0, 16, 9);
+    if (key) {
+      var c = item.color;
+      var gradient = ctx.createLinearGradient(0, 0, 16, 9);
+      gradient.addColorStop(0, 'rgb(' + c.r + ',' + c.g + ',' + c.b + ')');
+      gradient.addColorStop(1, Icons.tileBackground(c));
+      ctx.fillStyle = gradient;
+      ctx.fillRect(0, 0, 16, 9);
+    }
+    next.style.opacity = key ? '1' : '0';
+    els.washes[washIndex].style.opacity = '0';
+    washIndex = 1 - washIndex;
+  }
+
+  /* ---------- Motion helpers ---------- */
+
+  // Restarts a CSS animation class on an element.
+  function replay(node, className) {
+    node.classList.remove(className);
+    void node.offsetWidth; // force reflow so the animation starts over
+    node.classList.add(className);
+  }
+
+  // Shows a layer, then lets its CSS transition run from the .is-out state.
+  function animateIn(node) {
+    clearTimeout(node.outTimer);
+    node.hidden = false;
+    node.classList.add('is-out');
+    void node.offsetWidth;
+    node.classList.remove('is-out');
+  }
+
+  function animateOut(node, ms) {
+    node.classList.add('is-out');
+    clearTimeout(node.outTimer);
+    node.outTimer = setTimeout(function () {
+      node.hidden = true;
+      node.classList.remove('is-out');
+    }, ms || 320);
+  }
+
+  function pressFocused() {
+    var row = rows[rowIndex];
+    var tile = row && row.trackEl && row.trackEl.children[row.col];
+    if (!tile) return;
+    tile.classList.add('pressed');
+    setTimeout(function () { tile.classList.remove('pressed'); }, 120);
+  }
+
+  function updateShelf() {
+    if (mode !== 'home') return;
+    var row = rows[rowIndex];
+    var item = currentItem();
+    var title = item ? item.name : 'TVDeck';
+    if (els.shelfTitle.textContent !== title) replay(els.shelfInfo, 'swap');
+    els.shelfKind.textContent = row ? row.title : '';
+    els.shelfTitle.textContent = title;
+    els.shelfMeta.textContent = item ? describe(item) : 'Press RED on any tile to pin it to the dock';
+    setWash(item);
   }
 
   function hint(color, text) {
@@ -312,9 +452,9 @@
 
   function toast(text) {
     els.toast.textContent = text;
-    els.toast.hidden = false;
+    els.toast.classList.add('show');
     clearTimeout(toastTimer);
-    toastTimer = setTimeout(function () { els.toast.hidden = true; }, 2200);
+    toastTimer = setTimeout(function () { els.toast.classList.remove('show'); }, 2400);
   }
 
   /* ---------- Actions ---------- */
@@ -407,6 +547,9 @@
     ]).then(function (results) {
       data.calendar = results[0];
       data.ha = results[1] ? results[1].entities : [];
+      var next = data.calendar && data.calendar.events[0];
+      els.nextEvent.hidden = !next;
+      if (next) els.nextEvent.textContent = eventWhen(next) + ' · ' + next.title;
       if (loaded && mode !== 'settings') {
         buildRows();
         render();
@@ -429,6 +572,7 @@
       if (!loaded) {
         loaded = true;
         rowIndex = firstFocusableRow(0, 1);
+        setTimeout(function () { document.body.classList.remove('booting'); }, 1800);
       }
       render();
       loadGlance();
@@ -487,6 +631,7 @@
         info.appendChild(el('p', 'phone-pin', svc.pin));
         info.appendChild(el('p', '', 'Send links to the TV, rename inputs, and set up the calendar and Home Assistant.'));
       }).catch(function () {
+        qrBox.hidden = true;
         info.innerHTML = '';
         info.appendChild(el('p', '', 'The TVDeck service is not running.'));
         info.appendChild(el('p', '', 'Reopen TVDeck from TizenBrew to start it.'));
@@ -497,12 +642,12 @@
       card.appendChild(el('p', item.type === 'url' ? 'message-url' : 'message-text', item.value));
     }
 
-    els.overlay.hidden = false;
+    animateIn(els.overlay);
     updateFocus();
   }
 
   function closeOverlay() {
-    els.overlay.hidden = true;
+    animateOut(els.overlay, 280);
     overlay = null;
     mode = 'home';
     updateFocus();
@@ -626,6 +771,7 @@
         node = el('div', 'setting-section', item.label);
       } else {
         node = el('div', 'setting');
+        node.style.setProperty('--i', Math.min(els.settingsList.children.length, 14));
         node.appendChild(el('span', '', item.label));
         if (item.type === 'input') {
           var input = document.createElement('input');
@@ -668,14 +814,17 @@
   function openSettings() {
     mode = 'settings';
     settingsIndex = 0;
-    els.settings.hidden = false;
+    animateIn(els.settings);
+    replay(els.settings, 'opening');
+    clearTimeout(els.settings.openTimer);
+    els.settings.openTimer = setTimeout(function () { els.settings.classList.remove('opening'); }, 1000);
     renderSettings();
     updateFocus();
   }
 
   function closeSettings() {
     mode = 'home';
-    els.settings.hidden = true;
+    animateOut(els.settings, 320);
     buildRows();
     render();
     showNextMessage();
@@ -718,9 +867,8 @@
       return;
     }
     Weather.fetchCurrent(Store.get('city')).then(function (w) {
-      els.weatherIcon.textContent = w.glyph;
       els.weatherTemp.textContent = w.temp + '°';
-      els.weatherLabel.textContent = w.label + ' · ' + w.place;
+      els.weatherLabel.textContent = w.label;
       els.weather.hidden = false;
     }).catch(function () {
       els.weather.hidden = true;
@@ -775,7 +923,10 @@
         updateFocus();
         break;
       case KEY.ENTER:
-        if (item) open(item);
+        if (item) {
+          pressFocused();
+          setTimeout(function () { open(item); }, 140);
+        }
         break;
       case KEY.RED:
         if (item) togglePin(item);
@@ -835,7 +986,7 @@
   });
 
   window.addEventListener('resize', function () {
-    if (els.inner) updateFocus();
+    if (els.rendered) updateFocus();
   });
 
   // Pick up newly installed apps when coming back from another app.
@@ -848,6 +999,7 @@
 
   /* ---------- Boot ---------- */
 
+  els.settingsGlyph.innerHTML = Icons.svg('settings');
   Platform.registerKeys(['ColorF0Red', 'ColorF1Green', 'ColorF2Yellow', 'ColorF3Blue', 'ChannelUp', 'ChannelDown']);
   tickClock();
   setInterval(tickClock, 5000);

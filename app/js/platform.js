@@ -21,20 +21,29 @@ var Platform = (function () {
     /service$/i
   ];
 
+  // Desktop-only stand-ins for app artwork so the UI can be judged off the TV.
+  function mockArt(bg, fg, text, size) {
+    var svg = '<svg xmlns="http://www.w3.org/2000/svg" width="400" height="240">' +
+      '<rect width="400" height="240" fill="' + bg + '"/>' +
+      '<text x="200" y="138" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" ' +
+      'font-weight="700" font-size="' + (size || 44) + '" fill="' + fg + '">' + text + '</text></svg>';
+    return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+  }
+
   var MOCK_APPS = [
-    { id: '3201907018807', name: 'Netflix' },
-    { id: '111299001912', name: 'YouTube' },
-    { id: '3201910019365', name: 'Prime Video' },
-    { id: '3201901017640', name: 'Disney+' },
-    { id: '3201606009684', name: 'Spotify' },
-    { id: '3202010022079', name: 'Stremio' },
-    { id: '3201807016597', name: 'Apple TV' },
+    { id: '3201907018807', name: 'Netflix', icon: mockArt('#000', '#e50914', 'NETFLIX', 52) },
+    { id: '111299001912', name: 'YouTube', icon: mockArt('#fff', '#ff0000', 'YouTube') },
+    { id: '3201910019365', name: 'Prime Video', icon: mockArt('#0f171e', '#00a8e1', 'prime video') },
+    { id: '3201901017640', name: 'Disney+', icon: mockArt('#0b1a4a', '#fff', 'Disney+', 50) },
+    { id: '3201606009684', name: 'Spotify', icon: mockArt('#1db954', '#000', 'Spotify') },
+    { id: '3202010022079', name: 'Stremio', icon: mockArt('#2a1a5e', '#fff', 'Stremio') },
+    { id: '3201807016597', name: 'Apple TV', icon: mockArt('#1c1c1e', '#fff', 'tv', 64) },
     { id: 'com.samsung.tv.store', name: 'Apps' },
     { id: 'org.tizen.browser', name: 'Internet' }
   ];
 
   var MOCK_MODULES = [
-    { fullName: 'npm/@foxreis/tizentube', appName: 'TizenTube', appPath: 'https://www.youtube.com/tv', keys: [], packageType: 'mods' },
+    { fullName: 'npm/@foxreis/tizentube', appName: 'TizenTube', appPath: '#', keys: [], packageType: 'mods' },
     { fullName: 'npm/@gforceweb/smarttv-twitch-hls', appName: 'Twitch', appPath: '#', keys: [], packageType: 'app' }
   ];
 
