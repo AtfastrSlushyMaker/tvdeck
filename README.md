@@ -8,12 +8,37 @@ TVDeck is an independent project and is not affiliated with TizenBrew or Samsung
 
 ## Features
 
-- **Favorites row**: pin any app, TizenBrew module or web shortcut, and reorder them.
-- **All installed TV apps**: read straight from the TV and launched natively. Hide the ones you never use.
+- **Favorites row**: pin any app, input, TizenBrew module or web shortcut, and reorder them.
+- **Recent row**: the last things you opened, most recent first.
+- **Inputs**: switch to HDMI 1–3 or Live TV from the launcher. Rename them or add more from your phone.
+- **All installed TV apps**: read straight from the TV and launched natively, with their real icons. Hide the ones you never use.
 - **TizenBrew modules**: open your other modules (TizenTube, Twitch…) from the same screen.
+- **Send from phone**: scan the QR code, paste a link, and the TV offers to open it.
+- **At a glance**: upcoming events from any iCal feed (Google, iCloud, Outlook) and Home Assistant entities: toggle lights or switches, and see what's playing on media players.
 - **Web shortcuts**: add your own sites from Settings.
 - **Clock and weather**: weather comes from [Open-Meteo](https://open-meteo.com) (no API key, no tracking).
-- **No ads, no telemetry**, nothing sent anywhere except the weather lookup.
+- **Auto-start**: open TVDeck when TizenBrew starts, and start the phone service at boot.
+- **No ads, no telemetry**. The only outside requests are the weather lookup and the calendar and Home Assistant you configure.
+
+## How it works
+
+```
+TV ─ TizenBrew ─┬─ app/        launcher UI (served via jsDelivr)
+                └─ service/    Node.js service, port 8085
+                     ├─ phone page + link inbox (PIN protected)
+                     ├─ remote keys → TV's own control API (wss://127.0.0.1:8002)
+                     ├─ app icons from the TV filesystem
+                     └─ calendar / Home Assistant proxy (keeps the token off the page)
+```
+
+The service starts when TVDeck is opened from TizenBrew, or at boot if enabled in Settings.
+The first time it sends a remote key, the TV asks to allow "TVDeck". Accept it once.
+
+## Requirements
+
+- TizenBrew needs the TV's **Developer IP set to `127.0.0.1`**. If you pointed
+  Developer Mode at a computer to sideload something, set it back, or
+  TizenBrew modules like TizenTube can't start.
 
 ## Remote controls
 
@@ -23,7 +48,7 @@ TVDeck is an independent project and is not affiliated with TizenBrew or Samsung
 | 🔴 Red | Pin or unpin the focused tile to Favorites |
 | 🟢 Green | Settings |
 | 🟡 Yellow | Reorder (in Favorites) or hide an app (in Apps) |
-| 🔵 Blue | Refresh apps and modules |
+| 🔵 Blue | Refresh everything |
 | CH+ / CH− | Jump between rows |
 | Back | Close settings, cancel a move |
 
@@ -45,6 +70,15 @@ npm run dev
 Then open <http://localhost:5173>. Keyboard: arrows, Enter, Esc (Back),
 R/G/Y/B (color keys), PgUp/PgDn (channel up/down).
 
+To develop the phone page, widgets and inputs, run the service too:
+
+```bash
+TV_HOST=192.168.1.10 npm run service
+```
+
+With `TV_HOST` set, input tiles send **real** remote keys to that TV. The
+service saves its settings to `.tvdeck.json` (git-ignored) when run off the TV.
+
 Notes:
 
 - Target is the Chromium build on Tizen 6 (2021 TVs, Chromium 76). Avoid
@@ -52,6 +86,8 @@ Notes:
 - TizenBrew serves module files through jsDelivr, so use **relative** asset
   paths only.
 - `app/js/platform.js` is the only file that talks to Tizen/TizenBrew APIs.
+- `service/service.js` runs on the TV's Node (as old as v4 on Tizen 3): ES5 only.
+- `app/vendor/qrcode.js` is [qrcode-generator](https://github.com/kazuhikoarase/qrcode-generator) 2.0.4 (MIT).
 
 ## Publish
 

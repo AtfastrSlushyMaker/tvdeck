@@ -11,7 +11,7 @@ var Platform = (function () {
   var IS_TV = typeof tizen !== 'undefined' && !!tizen.application;
   var SELF_PACKAGE = 'tvdeck';
   var TB_SOCKET = 'ws://localhost:8081';
-  var TB_EVENTS = { GetModules: 4, LaunchModule: 5 };
+  var TB_EVENTS = { GetModules: 4, LaunchModule: 5, ModuleAction: 10 };
 
   // Apps that clutter the list on Samsung TVs and are never launched by hand.
   var HIDDEN_APP_PATTERNS = [
@@ -130,6 +130,91 @@ var Platform = (function () {
     location.href = url;
   }
 
+  // Opens a URL in the TV's own browser app, falling back to this page.
+  function openInBrowser(url) {
+    if (!IS_TV || !tizen.application.launchAppControl) {
+      window.open(url, '_blank');
+      return;
+    }
+    try {
+      var control = new tizen.ApplicationControl('http://tizen.org/appcontrol/operation/view', url);
+      tizen.application.launchAppControl(control, 'org.tizen.browser', null, function () { openUrl(url); });
+    } catch (e) {
+      openUrl(url);
+    }
+  }
+
+  /* ---------- TVDeck service (service/service.js) ---------- */
+
+  var SERVICE = 'http://127.0.0.1:8085';
+  var serviceUp = false;
+
+  function service(path, body) {
+    var options = body === undefined ? {} : {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain' }, // avoids a CORS preflight
+      body: JSON.stringify(body)
+    };
+    return fetch(SERVICE + path, options).then(function (res) {
+      serviceUp = true;
+      return res.json().then(function (json) {
+        if (!res.ok) throw new Error(json.error || 'HTTP ' + res.status);
+        return json;
+      });
+    }, function (err) {
+      serviceUp = false;
+      throw err;
+    });
+  }
+
+  function sendKey(key) {
+    return service('/api/key', { key: key });
+  }
+
+  function iconUrl(path) {
+    if (!path) return '';
+    if (path.indexOf('/') !== 0) return path;
+    return serviceUp ? SERVICE + '/api/icon?path=' + encodeURIComponent(path) : 'file://' + path;
+  }
+
+  /* ---------- TizenBrew auto-launch ---------- */
+
+  // e.g. "npm/tvdeck" or "gh/user/tvdeck", from /module/<encoded name>/app/index.html
+  function selfModuleName() {
+    var match = /\/module\/([^/]+)\//.exec(location.pathname);
+    return match ? decodeURIComponent(match[1]) : 'npm/' + SELF_PACKAGE;
+  }
+
+  function tizenbrewAction(action, module) {
+    if (!IS_TV) {
+      console.log('[mock] TizenBrew', action, module);
+      return;
+    }
+    var socket = new WebSocket(TB_SOCKET);
+    socket.onopen = function () {
+      socket.send(JSON.stringify({ type: TB_EVENTS.ModuleAction, payload: { action: action, module: module } }));
+      setTimeout(function () { socket.close(); }, 500);
+    };
+  }
+
+  function setAutoLaunch(enabled) {
+    tizenbrewAction('autolaunch', enabled ? selfModuleName() : '');
+  }
+
+  // TizenBrew matches services by module name without the "npm/" prefix,
+  // and the action replaces the whole list.
+  function setServiceAutoLaunch(enabled, currentList) {
+    var name = serviceModuleName();
+    var list = (currentList || []).filter(function (n) { return n !== name; });
+    if (enabled) list.push(name);
+    tizenbrewAction('autolaunchService', list);
+  }
+
+  function serviceModuleName() {
+    var self = selfModuleName();
+    return self.slice(self.indexOf('/') + 1);
+  }
+
   function registerKeys(keys) {
     if (!IS_TV || !tizen.tvinputdevice) return;
     keys.forEach(function (key) {
@@ -148,6 +233,14 @@ var Platform = (function () {
     listModules: listModules,
     launchModule: launchModule,
     openUrl: openUrl,
+    openInBrowser: openInBrowser,
+    service: service,
+    sendKey: sendKey,
+    iconUrl: iconUrl,
+    setAutoLaunch: setAutoLaunch,
+    setServiceAutoLaunch: setServiceAutoLaunch,
+    selfModuleName: selfModuleName,
+    serviceModuleName: serviceModuleName,
     registerKeys: registerKeys,
     exit: exit
   };

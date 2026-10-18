@@ -7,7 +7,7 @@
  *   Red        [R]        pin / unpin to Favorites
  *   Green      [G]        settings
  *   Yellow     [Y]        reorder (in Favorites) or hide app
- *   Blue       [B]        refresh app and module lists
+ *   Blue       [B]        refresh everything
  *   CH+ / CH-  [PgUp/Dn]  jump between rows
  */
 (function () {
@@ -22,6 +22,14 @@
   };
   var DESKTOP_ALIASES = { 82: KEY.RED, 71: KEY.GREEN, 89: KEY.YELLOW, 66: KEY.BLUE, 27: KEY.BACK, 33: KEY.CH_UP, 34: KEY.CH_DOWN };
 
+  var MAX_RECENT = 10;
+  var PINNABLE = { app: true, mod: true, web: true, key: true };
+  var HA_ACTIONABLE = ['light', 'switch', 'fan', 'input_boolean', 'scene', 'script', 'button', 'media_player', 'cover', 'lock'];
+  var DESKTOP_INPUTS = [
+    { name: 'HDMI 1', key: 'KEY_HDMI1' }, { name: 'HDMI 2', key: 'KEY_HDMI2' },
+    { name: 'HDMI 3', key: 'KEY_HDMI3' }, { name: 'Live TV', key: 'KEY_TV' }
+  ];
+
   var BRAND_COLORS = [
     [/netflix/i, '#b20710', '#4a0306'],
     [/youtube|tizentube/i, '#d11a1a', '#4d0909'],
@@ -32,7 +40,8 @@
     [/apple/i, '#4a4d55', '#16171a'],
     [/stremio/i, '#6a4bd6', '#241750'],
     [/jellyfin/i, '#7b3fbf', '#1d3a6b'],
-    [/plex/i, '#c98a07', '#3d2a02']
+    [/plex/i, '#c98a07', '#3d2a02'],
+    [/^hdmi|live tv|input/i, '#2f3a52', '#151b28']
   ];
 
   var els = {
@@ -46,16 +55,20 @@
     hints: document.getElementById('hints'),
     toast: document.getElementById('toast'),
     settings: document.getElementById('settings'),
-    settingsList: document.getElementById('settings-list')
+    settingsList: document.getElementById('settings-list'),
+    overlay: document.getElementById('overlay'),
+    overlayCard: document.getElementById('overlay-card')
   };
 
-  var data = { apps: [], modules: [] };
+  var data = { apps: [], modules: [], inputs: [], calendar: null, ha: [], tizenbrew: null };
   var rows = [];            // [{ id, title, items, col, el, trackEl }]
   var rowIndex = 0;
   var scrollY = 0;
   var loaded = false;       // first app/module list received
   var moving = false;       // reordering a favorite
-  var mode = 'home';        // 'home' | 'settings'
+  var mode = 'home';        // 'home' | 'settings' | 'overlay'
+  var overlay = null;       // { type: 'phone' } | { type: 'message', item }
+  var messages = [];        // queued phone messages
   var settingsItems = [];
   var settingsIndex = 0;
   var toastTimer = null;
@@ -70,29 +83,52 @@
     data.modules.forEach(function (mod) {
       items['mod:' + mod.fullName] = { key: 'mod:' + mod.fullName, kind: 'mod', name: mod.appName || mod.name, badge: 'Module', ref: mod };
     });
-    Store.get('webLinks').forEach(function (link, i) {
-      items['web:' + link.url] = { key: 'web:' + link.url, kind: 'web', name: link.name, badge: 'Web', ref: link, index: i };
+    Store.get('webLinks').forEach(function (link) {
+      items['web:' + link.url] = { key: 'web:' + link.url, kind: 'web', name: link.name, badge: 'Web', ref: link };
+    });
+    data.inputs.forEach(function (input) {
+      items['key:' + input.key] = { key: 'key:' + input.key, kind: 'key', name: input.name, badge: 'Input', ref: input };
     });
     return items;
+  }
+
+  function glanceItems() {
+    var list = [];
+    if (data.calendar && data.calendar.configured) {
+      list.push({ key: 'glance:calendar', kind: 'calendar', name: 'Calendar', events: data.calendar.events });
+    }
+    data.ha.forEach(function (entity) {
+      var media = entity.domain === 'media_player';
+      if (media && (entity.state === 'off' || entity.state === 'unavailable')) return;
+      list.push({ key: 'ha:' + entity.id, kind: media ? 'media' : 'ha', name: entity.name, ref: entity });
+    });
+    return list;
   }
 
   function buildRows() {
     var items = catalog();
     var hidden = Store.get('hiddenApps');
-    var favorites = Store.get('favorites')
-      .map(function (key) { return items[key]; })
-      .filter(Boolean);
+    function lookup(keys) {
+      return keys.map(function (key) { return items[key]; }).filter(Boolean);
+    }
 
     var next = [
-      { id: 'favorites', title: 'Favorites', featured: true, items: favorites,
+      { id: 'favorites', title: 'Favorites', featured: true, items: lookup(Store.get('favorites')),
         empty: 'Press RED on any tile to pin it here' },
+      { id: 'glance', title: 'At a glance', glance: true, items: glanceItems() },
+      { id: 'recent', title: 'Recent', items: Store.get('showRecent') ? lookup(Store.get('recent')) : [] },
+      { id: 'inputs', title: 'Inputs', items: data.inputs.map(function (input) { return items['key:' + input.key]; }) },
       { id: 'apps', title: 'Apps', items: data.apps
           .filter(function (app) { return hidden.indexOf(app.id) === -1; })
           .map(function (app) { return items['app:' + app.id]; }) },
       { id: 'modules', title: 'TizenBrew modules', items: data.modules
           .map(function (mod) { return items['mod:' + mod.fullName]; }) },
       { id: 'web', title: 'Web', items: Store.get('webLinks')
-          .map(function (link) { return items['web:' + link.url]; }) }
+          .map(function (link) { return items['web:' + link.url]; }) },
+      { id: 'tools', title: 'TVDeck', items: [
+          { key: 'tool:phone', kind: 'tool', name: 'Send from phone', badge: 'QR', ref: 'phone' },
+          { key: 'tool:settings', kind: 'tool', name: 'Settings', ref: 'settings' }
+        ] }
     ].filter(function (row) { return row.items.length || row.empty; });
 
     // Keep each row's horizontal position across rebuilds.
@@ -118,6 +154,13 @@
 
   /* ---------- Rendering ---------- */
 
+  function el(tag, className, text) {
+    var node = document.createElement(tag);
+    if (className) node.className = className;
+    if (text !== undefined) node.textContent = text;
+    return node;
+  }
+
   function tileColors(name) {
     for (var i = 0; i < BRAND_COLORS.length; i++) {
       if (BRAND_COLORS[i][0].test(name)) return [BRAND_COLORS[i][1], BRAND_COLORS[i][2]];
@@ -129,62 +172,84 @@
   }
 
   function renderTile(item) {
-    var tile = document.createElement('div');
-    tile.className = 'tile';
+    var tile = el('div', 'tile');
     var colors = tileColors(item.name);
     tile.style.setProperty('--tile-bg', 'linear-gradient(135deg,' + colors[0] + ',' + colors[1] + ')');
 
-    var letter = document.createElement('div');
-    letter.className = 'tile-letter';
-    letter.textContent = item.name.charAt(0).toUpperCase();
+    var glyph = item.kind === 'key' ? '⎆' : item.ref === 'phone' ? '📱' : item.ref === 'settings' ? '⚙' : item.name.charAt(0).toUpperCase();
+    var letter = el('div', 'tile-letter', glyph);
     tile.appendChild(letter);
 
-    if (item.icon) {
-      var img = document.createElement('img');
-      img.className = 'tile-icon';
+    var src = Platform.iconUrl(item.icon);
+    if (src) {
+      var img = el('img', 'tile-icon');
       img.alt = '';
       img.onload = function () { letter.hidden = true; };
-      img.onerror = function () { img.remove(); };
-      img.src = item.icon.indexOf('/') === 0 ? 'file://' + item.icon : item.icon;
+      img.onerror = function () { img.parentNode && img.parentNode.removeChild(img); };
+      img.src = src;
       tile.appendChild(img);
     }
 
-    if (item.badge) {
-      var badge = document.createElement('div');
-      badge.className = 'tile-badge';
-      badge.textContent = item.badge;
-      tile.appendChild(badge);
-    }
-
-    var name = document.createElement('div');
-    name.className = 'tile-name';
-    name.textContent = item.name;
-    tile.appendChild(name);
+    if (item.badge) tile.appendChild(el('div', 'tile-badge', item.badge));
+    tile.appendChild(el('div', 'tile-name', item.name));
     return tile;
   }
 
+  var DAY_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+  function eventWhen(event) {
+    var d = new Date(event.start);
+    var today = new Date();
+    var tomorrow = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1);
+    var day = d.toDateString() === today.toDateString() ? 'Today'
+      : d.toDateString() === tomorrow.toDateString() ? 'Tomorrow' : DAY_SHORT[d.getDay()];
+    return event.allDay ? day : day + ' ' + formatTime(d);
+  }
+
+  function renderGlance(item) {
+    var card = el('div', 'tile glance-card glance-' + item.kind);
+    if (item.kind === 'calendar') {
+      card.appendChild(el('div', 'glance-title', 'Calendar'));
+      var list = el('div', 'glance-events');
+      if (!item.events.length) list.appendChild(el('div', 'glance-dim', 'Nothing in the next 7 days'));
+      item.events.slice(0, 3).forEach(function (event) {
+        var line = el('div', 'glance-event');
+        line.appendChild(el('span', 'glance-when', eventWhen(event)));
+        line.appendChild(el('span', 'glance-what', event.title));
+        list.appendChild(line);
+      });
+      card.appendChild(list);
+    } else if (item.kind === 'media') {
+      var entity = item.ref;
+      card.appendChild(el('div', 'glance-title', (entity.state === 'playing' ? '▶ ' : '❚❚ ') + entity.name));
+      card.appendChild(el('div', 'glance-big', entity.mediaTitle || entity.state));
+      card.appendChild(el('div', 'glance-dim', entity.mediaArtist));
+    } else {
+      var e = item.ref;
+      var on = e.state === 'on' || e.state === 'open' || e.state === 'unlocked';
+      card.classList.toggle('is-on', on);
+      card.appendChild(el('div', 'glance-title', e.name));
+      card.appendChild(el('div', 'glance-big', e.state + (e.unit ? ' ' + e.unit : '')));
+      if (HA_ACTIONABLE.indexOf(e.domain) !== -1) card.appendChild(el('div', 'glance-dim', 'OK to toggle'));
+    }
+    return card;
+  }
+
   function render() {
-    var inner = document.createElement('div');
-    inner.className = 'rows-inner';
+    var inner = el('div', 'rows-inner');
 
     rows.forEach(function (row) {
-      var rowEl = document.createElement('section');
-      rowEl.className = 'row' + (row.featured ? ' featured' : '');
+      var rowEl = el('section', 'row' + (row.featured ? ' featured' : '') + (row.glance ? ' glance' : ''));
+      rowEl.appendChild(el('h2', 'row-title', row.title));
 
-      var title = document.createElement('h2');
-      title.className = 'row-title';
-      title.textContent = row.title;
-      rowEl.appendChild(title);
-
+      row.trackEl = null;
       if (!row.items.length) {
-        var empty = document.createElement('div');
-        empty.className = 'row-empty';
-        empty.textContent = row.empty;
-        rowEl.appendChild(empty);
+        rowEl.appendChild(el('div', 'row-empty', row.empty));
       } else {
-        var track = document.createElement('div');
-        track.className = 'row-track';
-        row.items.forEach(function (item) { track.appendChild(renderTile(item)); });
+        var track = el('div', 'row-track');
+        row.items.forEach(function (item) {
+          track.appendChild(row.glance ? renderGlance(item) : renderTile(item));
+        });
         rowEl.appendChild(track);
         row.trackEl = track;
       }
@@ -239,16 +304,26 @@
     return '<span class="hint"><span class="key ' + color + '"></span>' + text + '</span>';
   }
 
+  function plainHint(text) {
+    return '<span class="hint">' + text + '</span>';
+  }
+
   function renderHints() {
     var row = rows[rowIndex];
     var item = currentItem();
     var parts = [];
     if (mode === 'settings') {
-      parts.push('<span class="hint">OK to change · Back to close</span>');
+      parts.push(plainHint('OK to change · Back to close'));
+    } else if (mode === 'overlay' && overlay.type === 'message') {
+      parts.push(plainHint(overlay.item.type === 'url' ? 'OK to open in browser' : 'OK to dismiss'));
+      if (overlay.item.type === 'url') parts.push(hint('yellow', 'Open in TVDeck'));
+      parts.push(plainHint('Back to dismiss'));
+    } else if (mode === 'overlay') {
+      parts.push(plainHint('Back to close'));
     } else if (moving) {
-      parts.push('<span class="hint">◀ ▶ to move · OK to drop</span>');
+      parts.push(plainHint('◀ ▶ to move · OK to drop'));
     } else {
-      if (item) {
+      if (item && PINNABLE[item.kind]) {
         var pinned = Store.get('favorites').indexOf(item.key) !== -1;
         parts.push(hint('red', pinned ? 'Unpin' : 'Pin to Favorites'));
       }
@@ -274,17 +349,49 @@
 
   /* ---------- Actions ---------- */
 
+  function rememberRecent(item) {
+    var recent = Store.get('recent').filter(function (key) { return key !== item.key; });
+    recent.unshift(item.key);
+    Store.set('recent', recent.slice(0, MAX_RECENT));
+  }
+
   function open(item) {
-    if (item.kind === 'app') {
-      Platform.launchApp(item.ref.id).catch(function () { toast('Could not open ' + item.name); });
-    } else if (item.kind === 'mod') {
-      Platform.launchModule(item.ref);
-    } else if (item.kind === 'web') {
-      Platform.openUrl(item.ref.url);
+    if (PINNABLE[item.kind]) rememberRecent(item);
+    switch (item.kind) {
+      case 'app':
+        Platform.launchApp(item.ref.id).catch(function () { toast('Could not open ' + item.name); });
+        break;
+      case 'mod':
+        Platform.launchModule(item.ref);
+        break;
+      case 'web':
+        Platform.openUrl(item.ref.url);
+        break;
+      case 'key':
+        Platform.sendKey(item.ref.key)
+          .then(function () { toast('Switching to ' + item.name); })
+          .catch(function () { toast('TVDeck service not running'); });
+        break;
+      case 'ha':
+      case 'media':
+        if (HA_ACTIONABLE.indexOf(item.ref.domain) === -1) break;
+        Platform.service('/api/ha/action', { entity_id: item.ref.id })
+          .then(function () { setTimeout(loadGlance, 600); })
+          .catch(function (err) { toast(err.message); });
+        break;
+      case 'tool':
+        if (item.ref === 'phone') showOverlay({ type: 'phone' });
+        else openSettings();
+        break;
+    }
+    if (PINNABLE[item.kind]) {
+      buildRows();
+      render();
     }
   }
 
   function togglePin(item) {
+    if (!PINNABLE[item.kind]) return;
     var pinned = Store.toggleIn('favorites', item.key);
     toast(pinned ? 'Pinned ' + item.name : 'Unpinned ' + item.name);
     buildRows();
@@ -311,18 +418,141 @@
     render();
   }
 
+  /* ---------- Data loading ---------- */
+
+  function ignore() { return null; }
+
+  function loadInputs() {
+    return Platform.service('/api/inputs').then(function (res) {
+      return res.inputs;
+    }, function () {
+      return Platform.isTV ? [] : DESKTOP_INPUTS;
+    });
+  }
+
+  function loadGlance() {
+    return Promise.all([
+      Platform.service('/api/calendar').catch(ignore),
+      Platform.service('/api/ha/states').catch(ignore)
+    ]).then(function (results) {
+      data.calendar = results[0];
+      data.ha = results[1] ? results[1].entities : [];
+      if (loaded && mode !== 'settings') {
+        buildRows();
+        render();
+      }
+    });
+  }
+
   function refresh(announce) {
-    return Promise.all([Platform.listApps(), Platform.listModules()]).then(function (results) {
+    return Promise.all([
+      Platform.listApps(),
+      Platform.listModules(),
+      loadInputs(),
+      Platform.service('/api/tizenbrew').catch(ignore)
+    ]).then(function (results) {
       data.apps = results[0];
       data.modules = results[1];
+      data.inputs = results[2];
+      data.tizenbrew = results[3];
       buildRows();
       if (!loaded) {
         loaded = true;
         rowIndex = firstFocusableRow(0, 1);
       }
       render();
+      loadGlance();
       if (announce) toast('Refreshed');
     });
+  }
+
+  // Phone messages arrive through the service; poll slowly when it is down.
+  function pollInbox() {
+    Platform.service('/api/inbox').then(function (res) {
+      res.items.forEach(function (item) { messages.push(item); });
+      showNextMessage();
+      setTimeout(pollInbox, 2000);
+    }, function () {
+      setTimeout(pollInbox, 15000);
+    });
+  }
+
+  /* ---------- Overlays ---------- */
+
+  function showNextMessage() {
+    if (mode !== 'home' || !messages.length) return;
+    showOverlay({ type: 'message', item: messages.shift() });
+  }
+
+  function qrSvg(text) {
+    var qr = qrcode(0, 'M');
+    qr.addData(text);
+    qr.make();
+    return qr.createSvgTag({ cellSize: 6, margin: 2, scalable: true });
+  }
+
+  function showOverlay(next) {
+    overlay = next;
+    mode = 'overlay';
+    var card = els.overlayCard;
+    card.innerHTML = '';
+
+    if (next.type === 'phone') {
+      card.appendChild(el('h2', '', 'Send from your phone'));
+      var body = el('div', 'phone-body');
+      var qrBox = el('div', 'qr');
+      var info = el('div', 'phone-info');
+      body.appendChild(qrBox);
+      body.appendChild(info);
+      card.appendChild(body);
+      info.appendChild(el('p', 'glance-dim', 'Connecting to the TVDeck service…'));
+
+      Platform.service('/api/info').then(function (svc) {
+        info.innerHTML = '';
+        if (!svc.phoneUrl) throw new Error('No network address yet');
+        qrBox.innerHTML = qrSvg(svc.phoneUrl);
+        info.appendChild(el('p', '', 'Scan with your phone camera (same Wi-Fi), or open:'));
+        info.appendChild(el('p', 'phone-url', svc.phoneUrl.replace(/\?.*/, '')));
+        info.appendChild(el('p', '', 'PIN: ' + svc.pin));
+        info.appendChild(el('p', 'glance-dim', 'Send links to the TV, rename inputs, and set up the calendar and Home Assistant widgets.'));
+      }).catch(function () {
+        info.innerHTML = '';
+        info.appendChild(el('p', '', 'The TVDeck service is not running.'));
+        info.appendChild(el('p', 'glance-dim', 'Reopen TVDeck from TizenBrew to start it.'));
+      });
+    } else {
+      var item = next.item;
+      card.appendChild(el('h2', '', item.type === 'url' ? 'Link from your phone' : 'Message from your phone'));
+      card.appendChild(el('p', item.type === 'url' ? 'message-url' : 'message-text', item.value));
+    }
+
+    els.overlay.hidden = false;
+    updateFocus();
+  }
+
+  function closeOverlay() {
+    els.overlay.hidden = true;
+    overlay = null;
+    mode = 'home';
+    updateFocus();
+    showNextMessage();
+  }
+
+  function handleOverlayKey(key) {
+    if (overlay.type === 'message') {
+      var item = overlay.item;
+      if (key === KEY.ENTER) {
+        closeOverlay();
+        if (item.type === 'url') Platform.openInBrowser(item.value);
+      } else if (key === KEY.YELLOW && item.type === 'url') {
+        closeOverlay();
+        Platform.openUrl(item.value);
+      } else if (key === KEY.BACK) {
+        closeOverlay();
+      }
+      return;
+    }
+    if (key === KEY.BACK || key === KEY.ENTER) closeOverlay();
   }
 
   /* ---------- Settings ---------- */
@@ -347,6 +577,31 @@
       loadWeather();
     } });
 
+    items.push({ type: 'section', label: 'Startup' });
+    var tb = data.tizenbrew;
+    var self = Platform.selfModuleName();
+    var autoOpen = !!tb && tb.autoLaunchModule === self;
+    var autoService = !!tb && tb.autoLaunchServiceList.indexOf(Platform.serviceModuleName()) !== -1;
+    items.push(settingRow('Open TVDeck with TizenBrew', tb ? (autoOpen ? 'On' : 'Off') : 'Unavailable', function () {
+      if (!tb) return toast('Needs the TVDeck service');
+      Platform.setAutoLaunch(!autoOpen);
+      tb.autoLaunchModule = autoOpen ? '' : self;
+    }));
+    items.push(settingRow('Start phone service at boot', tb ? (autoService ? 'On' : 'Off') : 'Unavailable', function () {
+      if (!tb) return toast('Needs the TVDeck service');
+      Platform.setServiceAutoLaunch(!autoService, tb.autoLaunchServiceList);
+      var name = Platform.serviceModuleName();
+      tb.autoLaunchServiceList = tb.autoLaunchServiceList.filter(function (n) { return n !== name; });
+      if (!autoService) tb.autoLaunchServiceList.push(name);
+    }));
+
+    items.push({ type: 'section', label: 'Phone & widgets' });
+    items.push(settingRow('Set up from your phone', 'QR code', function () {
+      closeSettings();
+      showOverlay({ type: 'phone' });
+      return true;
+    }));
+
     items.push({ type: 'section', label: 'Web shortcuts' });
     Store.get('webLinks').forEach(function (link, i) {
       items.push(settingRow(link.name, 'Remove', function () {
@@ -370,6 +625,13 @@
     }));
 
     items.push({ type: 'section', label: 'Layout' });
+    items.push(settingRow('Recent row', Store.get('showRecent') ? 'On' : 'Off', function () {
+      Store.set('showRecent', !Store.get('showRecent'));
+    }));
+    items.push(settingRow('Clear recent', Store.get('recent').length ? 'Clear' : 'Empty', function () {
+      Store.set('recent', []);
+      toast('Recent cleared');
+    }));
     var hiddenCount = Store.get('hiddenApps').length;
     items.push(settingRow('Hidden apps', hiddenCount ? 'Show ' + hiddenCount : 'None', function () {
       Store.set('hiddenApps', []);
@@ -388,34 +650,26 @@
     settingsItems = buildSettings();
     els.settingsList.innerHTML = '';
     settingsItems.forEach(function (item) {
-      var el;
+      var node;
       if (item.type === 'section') {
-        el = document.createElement('div');
-        el.className = 'setting-section';
-        el.textContent = item.label;
+        node = el('div', 'setting-section', item.label);
       } else {
-        el = document.createElement('div');
-        el.className = 'setting';
-        var label = document.createElement('span');
-        label.textContent = item.label;
-        el.appendChild(label);
+        node = el('div', 'setting');
+        node.appendChild(el('span', '', item.label));
         if (item.type === 'input') {
           var input = document.createElement('input');
           input.type = item.label.indexOf('URL') !== -1 ? 'url' : 'text';
           input.value = item.value;
           input.placeholder = item.placeholder || '';
           input.addEventListener('change', function () { item.onSave(input.value.trim()); });
-          el.appendChild(input);
+          node.appendChild(input);
           item.input = input;
         } else {
-          var value = document.createElement('span');
-          value.className = 'setting-value';
-          value.textContent = item.value;
-          el.appendChild(value);
+          node.appendChild(el('span', 'setting-value', item.value));
         }
       }
-      item.el = el;
-      els.settingsList.appendChild(el);
+      item.el = node;
+      els.settingsList.appendChild(node);
     });
     if (!isSelectable(settingsIndex)) settingsIndex = nextSelectable(-1, 1);
     focusSetting();
@@ -436,8 +690,8 @@
     settingsItems.forEach(function (item, i) {
       if (item.el) item.el.classList.toggle('focused', i === settingsIndex);
     });
-    var el = settingsItems[settingsIndex] && settingsItems[settingsIndex].el;
-    if (el && el.scrollIntoView) el.scrollIntoView({ block: 'nearest' });
+    var node = settingsItems[settingsIndex] && settingsItems[settingsIndex].el;
+    if (node && node.scrollIntoView) node.scrollIntoView({ block: 'nearest' });
   }
 
   function openSettings() {
@@ -453,6 +707,7 @@
     els.settings.hidden = true;
     buildRows();
     render();
+    showNextMessage();
   }
 
   function activateSetting() {
@@ -462,8 +717,8 @@
       item.input.focus();
       return;
     }
-    item.action();
-    renderSettings();
+    // An action returning true has left the settings panel.
+    if (item.action() !== true) renderSettings();
   }
 
   /* ---------- Clock & weather ---------- */
@@ -474,15 +729,15 @@
 
   function pad(n) { return n < 10 ? '0' + n : '' + n; }
 
+  function formatTime(date) {
+    var h = date.getHours();
+    if (Store.get('use24h')) return pad(h) + ':' + pad(date.getMinutes());
+    return (h % 12 || 12) + ':' + pad(date.getMinutes()) + (h < 12 ? ' AM' : ' PM');
+  }
+
   function tickClock() {
     var now = new Date();
-    var h = now.getHours();
-    var suffix = '';
-    if (!Store.get('use24h')) {
-      suffix = h < 12 ? ' AM' : ' PM';
-      h = h % 12 || 12;
-    }
-    els.clock.textContent = (Store.get('use24h') ? pad(h) : h) + ':' + pad(now.getMinutes()) + suffix;
+    els.clock.textContent = formatTime(now);
     els.date.textContent = DAYS[now.getDay()] + ', ' + now.getDate() + ' ' + MONTHS[now.getMonth()];
   }
 
@@ -604,6 +859,7 @@
 
     if (key === KEY.BACK) e.preventDefault();
     if (mode === 'settings') handleSettingsKey(key);
+    else if (mode === 'overlay') handleOverlayKey(key);
     else handleHomeKey(key);
   });
 
@@ -626,5 +882,10 @@
   setInterval(tickClock, 5000);
   loadWeather();
   setInterval(loadWeather, 30 * 60 * 1000);
-  refresh(false);
+  setInterval(loadGlance, 30 * 1000);
+  // Probe the service first so app icons can be served through it.
+  Platform.service('/api/info').catch(ignore).then(function () {
+    refresh(false);
+    pollInbox();
+  });
 })();

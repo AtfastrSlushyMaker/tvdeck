@@ -5,6 +5,7 @@
   "packageType": "app",
   "appName": "TVDeck",
   "appPath": "app/index.html",
+  "serviceFile": "service/service.js",
   "keys": [
     "ColorF0Red",
     "ColorF1Green",
@@ -14,7 +15,8 @@
     "ChannelDown"
   ],
   "files": [
-    "app/"
+    "app/",
+    "service/"
   ],
   "keywords": [
     "tizenbrew",
@@ -24,7 +26,8 @@
     "smart-tv"
   ],
   "scripts": {
-    "dev": "python3 -m http.server 5173 --directory app"
+    "dev": "python3 -m http.server 5173 --directory app",
+    "service": "TV_HOST=${TV_HOST:-192.168.1.10} node service/service.js"
   },
   "license": "MIT"
 }
