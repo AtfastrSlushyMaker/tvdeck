@@ -88,6 +88,7 @@ Notes:
 - `app/js/platform.js` is the only file that talks to Tizen/TizenBrew APIs.
 - `service/service.js` runs on the TV's Node (as old as v4 on Tizen 3): ES5 only.
 - `app/vendor/qrcode.js` is [qrcode-generator](https://github.com/kazuhikoarase/qrcode-generator) 2.0.4 (MIT).
+- `app/fonts/instrument-serif.woff2` is [Instrument Serif](https://fonts.google.com/specimen/Instrument+Serif) (SIL Open Font License 1.1), bundled so the TV needs no font requests.
 
 ## Publish
 

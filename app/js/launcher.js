@@ -30,19 +30,6 @@
     { name: 'HDMI 3', key: 'KEY_HDMI3' }, { name: 'Live TV', key: 'KEY_TV' }
   ];
 
-  var BRAND_COLORS = [
-    [/netflix/i, '#b20710', '#4a0306'],
-    [/youtube|tizentube/i, '#d11a1a', '#4d0909'],
-    [/prime/i, '#0f79af', '#08334d'],
-    [/disney/i, '#1238a8', '#0a1440'],
-    [/spotify/i, '#1aa34a', '#0a3d1c'],
-    [/twitch/i, '#7a3cf0', '#2c1260'],
-    [/apple/i, '#4a4d55', '#16171a'],
-    [/stremio/i, '#6a4bd6', '#241750'],
-    [/jellyfin/i, '#7b3fbf', '#1d3a6b'],
-    [/plex/i, '#c98a07', '#3d2a02'],
-    [/^hdmi|live tv|input/i, '#2f3a52', '#151b28']
-  ];
 
   var els = {
     rows: document.getElementById('rows'),
@@ -126,7 +113,7 @@
       { id: 'web', title: 'Web', items: Store.get('webLinks')
           .map(function (link) { return items['web:' + link.url]; }) },
       { id: 'tools', title: 'TVDeck', items: [
-          { key: 'tool:phone', kind: 'tool', name: 'Send from phone', badge: 'QR', ref: 'phone' },
+          { key: 'tool:phone', kind: 'tool', name: 'Send from phone', ref: 'phone' },
           { key: 'tool:settings', kind: 'tool', name: 'Settings', ref: 'settings' }
         ] }
     ].filter(function (row) { return row.items.length || row.empty; });
@@ -161,36 +148,19 @@
     return node;
   }
 
-  function tileColors(name) {
-    for (var i = 0; i < BRAND_COLORS.length; i++) {
-      if (BRAND_COLORS[i][0].test(name)) return [BRAND_COLORS[i][1], BRAND_COLORS[i][2]];
-    }
-    var hash = 0;
-    for (var j = 0; j < name.length; j++) hash = (hash * 31 + name.charCodeAt(j)) | 0;
-    var hue = Math.abs(hash) % 360;
-    return ['hsl(' + hue + ',50%,36%)', 'hsl(' + ((hue + 40) % 360) + ',55%,18%)'];
-  }
-
   function renderTile(item) {
     var tile = el('div', 'tile');
-    var colors = tileColors(item.name);
-    tile.style.setProperty('--tile-bg', 'linear-gradient(135deg,' + colors[0] + ',' + colors[1] + ')');
-
-    var glyph = item.kind === 'key' ? '⎆' : item.ref === 'phone' ? '📱' : item.ref === 'settings' ? '⚙' : item.name.charAt(0).toUpperCase();
-    var letter = el('div', 'tile-letter', glyph);
-    tile.appendChild(letter);
+    if (item.badge) tile.appendChild(el('div', 'tile-kind', item.badge));
 
     var src = Platform.iconUrl(item.icon);
     if (src) {
       var img = el('img', 'tile-icon');
       img.alt = '';
-      img.onload = function () { letter.hidden = true; };
       img.onerror = function () { img.parentNode && img.parentNode.removeChild(img); };
       img.src = src;
       tile.appendChild(img);
     }
 
-    if (item.badge) tile.appendChild(el('div', 'tile-badge', item.badge));
     tile.appendChild(el('div', 'tile-name', item.name));
     return tile;
   }
@@ -209,7 +179,7 @@
   function renderGlance(item) {
     var card = el('div', 'tile glance-card glance-' + item.kind);
     if (item.kind === 'calendar') {
-      card.appendChild(el('div', 'glance-title', 'Calendar'));
+      card.appendChild(el('div', 'glance-title', 'Next 7 days'));
       var list = el('div', 'glance-events');
       if (!item.events.length) list.appendChild(el('div', 'glance-dim', 'Nothing in the next 7 days'));
       item.events.slice(0, 3).forEach(function (event) {
@@ -221,7 +191,7 @@
       card.appendChild(list);
     } else if (item.kind === 'media') {
       var entity = item.ref;
-      card.appendChild(el('div', 'glance-title', (entity.state === 'playing' ? '▶ ' : '❚❚ ') + entity.name));
+      card.appendChild(el('div', 'glance-title', (entity.state === 'playing' ? 'Playing · ' : 'Paused · ') + entity.name));
       card.appendChild(el('div', 'glance-big', entity.mediaTitle || entity.state));
       card.appendChild(el('div', 'glance-dim', entity.mediaArtist));
     } else {
@@ -321,7 +291,7 @@
     } else if (mode === 'overlay') {
       parts.push(plainHint('Back to close'));
     } else if (moving) {
-      parts.push(plainHint('◀ ▶ to move · OK to drop'));
+      parts.push(plainHint('Left and right to move · OK to drop'));
     } else {
       if (item && PINNABLE[item.kind]) {
         var pinned = Store.get('favorites').indexOf(item.key) !== -1;
@@ -505,20 +475,21 @@
       body.appendChild(qrBox);
       body.appendChild(info);
       card.appendChild(body);
-      info.appendChild(el('p', 'glance-dim', 'Connecting to the TVDeck service…'));
+      info.appendChild(el('p', '', 'Connecting to the TVDeck service…'));
 
       Platform.service('/api/info').then(function (svc) {
         info.innerHTML = '';
         if (!svc.phoneUrl) throw new Error('No network address yet');
         qrBox.innerHTML = qrSvg(svc.phoneUrl);
-        info.appendChild(el('p', '', 'Scan with your phone camera (same Wi-Fi), or open:'));
-        info.appendChild(el('p', 'phone-url', svc.phoneUrl.replace(/\?.*/, '')));
-        info.appendChild(el('p', '', 'PIN: ' + svc.pin));
-        info.appendChild(el('p', 'glance-dim', 'Send links to the TV, rename inputs, and set up the calendar and Home Assistant widgets.'));
+        info.appendChild(el('p', '', 'Scan with your phone camera on the same Wi-Fi, or open'));
+        info.appendChild(el('p', 'phone-url', svc.phoneUrl.replace(/^http:\/\//, '').replace(/\/?\?.*/, '')));
+        info.appendChild(el('p', '', 'PIN'));
+        info.appendChild(el('p', 'phone-pin', svc.pin));
+        info.appendChild(el('p', '', 'Send links to the TV, rename inputs, and set up the calendar and Home Assistant.'));
       }).catch(function () {
         info.innerHTML = '';
         info.appendChild(el('p', '', 'The TVDeck service is not running.'));
-        info.appendChild(el('p', 'glance-dim', 'Reopen TVDeck from TizenBrew to start it.'));
+        info.appendChild(el('p', '', 'Reopen TVDeck from TizenBrew to start it.'));
       });
     } else {
       var item = next.item;
