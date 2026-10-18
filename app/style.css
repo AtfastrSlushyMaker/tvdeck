@@ -117,8 +117,8 @@ html, body {
 }
 
 .clock {
-  font-size: 1.9vw;
-  font-weight: 600;
+  font-size: 1.8vw;
+  font-weight: 500;
   letter-spacing: -0.01em;
   font-variant-numeric: tabular-nums;
 }
@@ -134,7 +134,7 @@ html, body {
 .weather-temp {
   margin-right: 0.4vw;
   color: var(--text);
-  font-weight: 600;
+  font-weight: 500;
 }
 
 .ticker {
@@ -160,17 +160,17 @@ html, body {
 }
 
 .shelf-kind {
-  font-size: 0.85vw;
-  font-weight: 600;
+  font-size: 0.8vw;
+  font-weight: 500;
   letter-spacing: 0.1vw;
   text-transform: uppercase;
   color: var(--text-2);
 }
 
 .shelf-title {
-  margin: 0.4vw 0 0.3vw;
-  font-size: 3.8vw;
-  font-weight: 700;
+  margin: 0.4vw 0 0.35vw;
+  font-size: 3.3vw;
+  font-weight: 600;
   letter-spacing: -0.022em;
   line-height: 1.05;
   white-space: nowrap;
@@ -191,8 +191,8 @@ html, body {
 
 .row-title {
   margin: 0 0 0.9vw var(--edge);
-  font-size: 1.2vw;
-  font-weight: 600;
+  font-size: 1.1vw;
+  font-weight: 500;
   color: var(--text-3);
   transition: color 400ms var(--ease);
 }
@@ -235,7 +235,7 @@ html, body {
   right: 6%;
   bottom: -6%;
   border-radius: var(--radius);
-  box-shadow: 0 1.6vw 3.2vw rgba(0, 0, 0, 0.55), 0 0.4vw 1vw rgba(0, 0, 0, 0.35);
+  box-shadow: 0 1.4vw 2.8vw rgba(0, 0, 0, 0.42), 0 0.3vw 0.8vw rgba(0, 0, 0, 0.22);
   opacity: 0;
   transition: opacity var(--t-focus) var(--ease);
 }
@@ -309,8 +309,8 @@ html, body {
   left: 0.8vw;
   right: 0.8vw;
   bottom: 1.15vw;
-  font-size: 1.1vw;
-  font-weight: 600;
+  font-size: 1.05vw;
+  font-weight: 500;
   text-align: center;
   white-space: nowrap;
   overflow: hidden;
@@ -357,7 +357,7 @@ html, body {
 
 .tile.focused {
   z-index: 2;
-  transform: scale(1.12);
+  transform: scale(1.085);
   will-change: transform;
 }
 
@@ -378,7 +378,7 @@ html, body {
 
 /* OK pressed: quick press-in, then the spring brings it back */
 .tile.focused.pressed {
-  transform: scale(1.04);
+  transform: scale(1.03);
   transition: transform 110ms var(--press);
 }
 
@@ -428,8 +428,8 @@ body.idle .tile.focused .tile-shine { animation: glint 12s var(--sine) 1s infini
 .tile.moving { animation: jiggle 260ms var(--press) infinite alternate; }
 
 @keyframes jiggle {
-  from { transform: scale(1.12) rotate(-1.2deg); }
-  to { transform: scale(1.12) rotate(1.2deg); }
+  from { transform: scale(1.085) rotate(-1deg); }
+  to { transform: scale(1.085) rotate(1deg); }
 }
 
 /* At-a-glance cards */
@@ -452,8 +452,8 @@ body.idle .tile.focused .tile-shine { animation: glint 12s var(--sine) 1s infini
 }
 
 .glance-title {
-  font-size: 0.85vw;
-  font-weight: 600;
+  font-size: 0.8vw;
+  font-weight: 500;
   letter-spacing: 0.08vw;
   text-transform: uppercase;
   color: var(--text-2);
@@ -464,8 +464,8 @@ body.idle .tile.focused .tile-shine { animation: glint 12s var(--sine) 1s infini
 
 .glance-big {
   margin-top: 0.7vw;
-  font-size: 2vw;
-  font-weight: 700;
+  font-size: 1.85vw;
+  font-weight: 600;
   letter-spacing: -0.03vw;
   white-space: nowrap;
   overflow: hidden;
@@ -588,7 +588,7 @@ body.scrolled .topfade { opacity: 1; }
 
 /* The launcher sinks back behind the settings sheet */
 body.sheet-on .viewport {
-  opacity: 0.35;
+  opacity: 0.22;
   transform: scale(0.96);
 }
 
@@ -599,7 +599,7 @@ body.sheet-on .viewport {
 
 .settings-side {
   transition: transform 700ms var(--ease);
-  flex: 0 0 32%;
+  flex: 0 0 38%;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -613,30 +613,51 @@ body.sheet-on .viewport {
 }
 
 .settings-glyph {
-  width: 13vw;
-  height: 13vw;
-  padding: 3vw;
-  border-radius: 2.6vw;
+  width: 8.5vw;
+  height: 8.5vw;
+  padding: 2vw;
+  border-radius: 1.9vw;
   background: linear-gradient(180deg, #3a3a3c, #1c1c1e);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1);
   color: var(--text);
 }
 
 .settings-glyph svg { width: 100%; height: 100%; }
 
 .settings-side h2 {
-  margin: 2vw 0 0.3vw;
-  font-size: 2.4vw;
-  font-weight: 700;
+  margin: 1.5vw 0 0.3vw;
+  font-size: 1.8vw;
+  font-weight: 600;
+  letter-spacing: -0.015em;
   color: var(--text);
 }
 
-.settings-side p { margin: 0; font-size: 1.1vw; }
+.settings-side p {
+  max-width: 22vw;
+  margin: 0;
+  font-size: 0.95vw;
+  text-align: center;
+}
+
+/* Page change: the left column cross-fades, the list slides in */
+.settings-side.page-swap > * { animation: fade-in 450ms var(--ease) both; }
+.settings-panel.page-forward { animation: page-forward 420ms var(--ease) both; }
+.settings-panel.page-back { animation: page-back 420ms var(--ease) both; }
+
+@keyframes page-forward {
+  from { opacity: 0; transform: translateX(2.4vw); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes page-back {
+  from { opacity: 0; transform: translateX(-2.4vw); }
+  to { opacity: 1; transform: none; }
+}
 
 .settings-panel {
-  flex: 1;
+  flex: 0 0 44vw;
   position: relative;
   height: 100%;
-  margin-right: 6vw;
   overflow: hidden;
   /* Rows fade out at the edges instead of being cut */
   -webkit-mask-image: linear-gradient(180deg, transparent 0, #000 9%, #000 91%, transparent 100%);
@@ -650,10 +671,10 @@ body.sheet-on .viewport {
 }
 
 .setting-section {
-  margin: 2.2vw 0 0.6vw 1.4vw;
-  font-size: 0.9vw;
-  font-weight: 600;
-  letter-spacing: 0.06vw;
+  margin: 1.8vw 0 0.5vw 1.1vw;
+  font-size: 0.75vw;
+  font-weight: 500;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--text-3);
 }
@@ -664,12 +685,12 @@ body.sheet-on .viewport {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 0.3vw;
-  padding: 1vw 1.4vw;
-  border-radius: var(--radius);
-  font-size: 1.25vw;
-  font-weight: 500;
-  background: var(--fill);
+  margin-bottom: 0.25vw;
+  padding: 0.75vw 1.1vw;
+  border-radius: 0.6vw;
+  font-size: 1.05vw;
+  font-weight: 400;
+  background: rgba(255, 255, 255, 0.07);
   transition: transform 420ms var(--spring), background-color 250ms var(--ease), color 250ms var(--ease);
 }
 
@@ -686,10 +707,24 @@ body.sheet-on .viewport {
 
 .setting.focused {
   color: #000;
-  background: #fff;
-  transform: scale(1.03);
-  box-shadow: 0 1vw 2vw rgba(0, 0, 0, 0.5);
+  background: rgba(255, 255, 255, 0.94);
+  transform: scale(1.015);
+  box-shadow: 0 0.6vw 1.4vw rgba(0, 0, 0, 0.3);
 }
+
+.setting-section:empty { margin: 0.6vw 0 0; }
+
+/* Menu rows lead to a page */
+.setting-link::after {
+  content: "\203A";
+  margin-left: 0.8vw;
+  font-size: 1.35vw;
+  line-height: 1;
+  color: var(--text-3);
+}
+
+.setting-link .setting-value { margin-left: auto; }
+.setting.focused.setting-link::after { color: rgba(0, 0, 0, 0.4); }
 
 .setting-value {
   margin-left: 1vw;
@@ -699,7 +734,7 @@ body.sheet-on .viewport {
 .setting.focused .setting-value { color: rgba(0, 0, 0, 0.55); }
 
 .setting input {
-  width: 16vw;
+  width: 18vw;
   padding: 0;
   border: 0;
   font: inherit;
@@ -751,8 +786,8 @@ body.sheet-on .viewport {
 
 .overlay-card h2 {
   margin: 0 0 1.8vw;
-  font-size: 2.3vw;
-  font-weight: 700;
+  font-size: 2vw;
+  font-weight: 600;
   letter-spacing: -0.03vw;
 }
 
@@ -777,16 +812,16 @@ body.sheet-on .viewport {
 
 .phone-info .phone-url {
   margin-bottom: 1.6vw;
-  font-size: 1.9vw;
-  font-weight: 600;
+  font-size: 1.7vw;
+  font-weight: 500;
   color: var(--text);
 }
 
 .phone-info .phone-pin {
   margin-bottom: 1.6vw;
-  font-size: 3.2vw;
-  font-weight: 700;
-  letter-spacing: 0.4vw;
+  font-size: 2.8vw;
+  font-weight: 500;
+  letter-spacing: 0.35em;
   color: var(--text);
 }
 
@@ -797,8 +832,8 @@ body.sheet-on .viewport {
 }
 
 .message-text {
-  font-size: 2.2vw;
-  font-weight: 600;
+  font-size: 2vw;
+  font-weight: 500;
 }
 
 [hidden] { display: none !important; }
@@ -874,7 +909,7 @@ body.booting .tile-art {
 
 .ambient-clock {
   font-size: 9vw;
-  font-weight: 600;
+  font-weight: 300;
   letter-spacing: -0.035em;
   line-height: 1;
   font-variant-numeric: tabular-nums;
@@ -882,8 +917,8 @@ body.booting .tile-art {
 
 .ambient-date {
   margin-top: 0.8vw;
-  font-size: 1.7vw;
-  font-weight: 500;
+  font-size: 1.6vw;
+  font-weight: 400;
 }
 
 .ambient-line {

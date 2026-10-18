@@ -55,7 +55,11 @@
     shelfTitle: document.getElementById('shelf-title'),
     shelfMeta: document.getElementById('shelf-meta'),
     washes: document.querySelectorAll('.wash'),
-    settingsGlyph: document.getElementById('settings-glyph')
+    settingsGlyph: document.getElementById('settings-glyph'),
+    settingsTitle: document.getElementById('settings-title'),
+    settingsSubtitle: document.getElementById('settings-subtitle'),
+    settingsSide: document.querySelector('.settings-side'),
+    settingsPanel: document.querySelector('.settings-panel')
   };
 
   var data = { apps: [], modules: [], inputs: [], calendar: null, ha: [], tizenbrew: null };
@@ -490,7 +494,7 @@
     var item = currentItem();
     var parts = [];
     if (mode === 'settings') {
-      parts.push(plainHint('OK to change · Back to close'));
+      parts.push(plainHint(settingsPage === 'root' ? 'OK to open · Back to close' : 'OK to change · Back to return'));
     } else if (mode === 'overlay' && overlay.type === 'message') {
       parts.push(plainHint(overlay.item.type === 'url' ? 'OK to open in browser' : 'OK to dismiss'));
       if (overlay.item.type === 'url') parts.push(hint('yellow', 'Open in TVDeck'));
@@ -757,127 +761,197 @@
 
   /* ---------- Settings ---------- */
 
+  // Settings are a short menu of pages (like tvOS): OK opens a page,
+  // Back returns to the menu, Back again closes.
+  var PAGES = {
+    root: { title: 'Settings', subtitle: 'TVDeck', glyph: 'settings' },
+    general: { title: 'General', subtitle: 'Clock, weather and sound', glyph: 'settings' },
+    startup: { title: 'Startup', subtitle: 'What runs when the TV starts', glyph: 'tv' },
+    phone: { title: 'Phone & widgets', subtitle: 'Links, inputs, calendar, Home Assistant', glyph: 'phone' },
+    web: { title: 'Web shortcuts', subtitle: 'Sites on your home screen', glyph: 'web' },
+    layout: { title: 'Layout', subtitle: 'Rows, ambient screen and reset', glyph: 'app' }
+  };
+
+  var settingsPage = 'root';
+  var rootIndex = 0;          // where the menu focus was before opening a page
+
   function settingRow(label, value, action) {
     return { type: 'row', label: label, value: value, action: action };
   }
 
-  function buildSettings() {
-    var items = [{ type: 'section', label: 'General' }];
-    items.push(settingRow('Clock', Store.get('use24h') ? '24-hour' : '12-hour', function () {
-      Store.set('use24h', !Store.get('use24h'));
-      tickClock();
-    }));
-    items.push(settingRow('Weather', Store.get('showWeather') ? 'On' : 'Off', function () {
-      Store.set('showWeather', !Store.get('showWeather'));
-      loadWeather();
-    }));
-    items.push({ type: 'input', label: 'City', value: Store.get('city'), onSave: function (value) {
-      if (!value) return;
-      Store.set('city', value);
-      loadWeather();
-    } });
-
-    items.push({ type: 'section', label: 'Startup' });
-    var tb = data.tizenbrew;
-    var self = Platform.selfModuleName();
-    var autoOpen = !!tb && tb.autoLaunchModule === self;
-    var autoService = !!tb && tb.autoLaunchServiceList.indexOf(Platform.serviceModuleName()) !== -1;
-    items.push(settingRow('Open TVDeck with TizenBrew', tb ? (autoOpen ? 'On' : 'Off') : 'Unavailable', function () {
-      if (!tb) return toast('Needs the TVDeck service');
-      Platform.setAutoLaunch(!autoOpen);
-      tb.autoLaunchModule = autoOpen ? '' : self;
-    }));
-    items.push(settingRow('Start phone service at boot', tb ? (autoService ? 'On' : 'Off') : 'Unavailable', function () {
-      if (!tb) return toast('Needs the TVDeck service');
-      Platform.setServiceAutoLaunch(!autoService, tb.autoLaunchServiceList);
-      var name = Platform.serviceModuleName();
-      tb.autoLaunchServiceList = tb.autoLaunchServiceList.filter(function (n) { return n !== name; });
-      if (!autoService) tb.autoLaunchServiceList.push(name);
-    }));
-
-    items.push({ type: 'section', label: 'Phone & widgets' });
-    items.push(settingRow('Set up from your phone', 'QR code', function () {
-      closeSettings();
-      showOverlay({ type: 'phone' });
-      return true;
-    }));
-
-    items.push({ type: 'section', label: 'Web shortcuts' });
-    Store.get('webLinks').forEach(function (link, i) {
-      items.push(settingRow(link.name, 'Remove', function () {
-        var links = Store.get('webLinks').slice();
-        links.splice(i, 1);
-        Store.set('webLinks', links);
-        Store.set('favorites', Store.get('favorites').filter(function (key) { return key !== 'web:' + link.url; }));
-        toast('Removed ' + link.name);
-      }));
-    });
-    var draft = { name: '', url: '' };
-    items.push({ type: 'input', label: 'New name', value: '', onSave: function (v) { draft.name = v; } });
-    items.push({ type: 'input', label: 'New URL', value: '', placeholder: 'https://', onSave: function (v) { draft.url = v; } });
-    items.push(settingRow('Add shortcut', '+', function () {
-      var url = draft.url.trim();
-      if (!url) return toast('Enter a URL first');
-      if (!/^https?:\/\//.test(url)) url = 'https://' + url;
-      var name = draft.name.trim() || url.replace(/^https?:\/\/(www\.)?/, '').split('/')[0];
-      Store.set('webLinks', Store.get('webLinks').concat([{ name: name, url: url }]));
-      toast('Added ' + name);
-    }));
-
-    items.push({ type: 'section', label: 'Layout' });
-    items.push(settingRow('Group apps by category', Store.get('groupApps') ? 'On' : 'Off', function () {
-      Store.set('groupApps', !Store.get('groupApps'));
-    }));
-    items.push(settingRow('UI sounds', Store.get('sounds') ? 'On' : 'Off', function () {
-      Store.set('sounds', !Store.get('sounds'));
-      Sounds.setEnabled(Store.get('sounds'));
-      Sounds.play('select');
-    }));
-    items.push(settingRow('Ambient screen when idle', Store.get('ambient') ? 'On' : 'Off', function () {
-      Store.set('ambient', !Store.get('ambient'));
-      noteActivity();
-    }));
-    items.push(settingRow('Recent row', Store.get('showRecent') ? 'On' : 'Off', function () {
-      Store.set('showRecent', !Store.get('showRecent'));
-    }));
-    items.push(settingRow('Clear recent', Store.get('recent').length ? 'Clear' : 'Empty', function () {
-      Store.set('recent', []);
-      toast('Recent cleared');
-    }));
-    var hiddenCount = Store.get('hiddenApps').length;
-    items.push(settingRow('Hidden apps', hiddenCount ? 'Show ' + hiddenCount : 'None', function () {
-      Store.set('hiddenApps', []);
-      toast('All apps visible');
-    }));
-    items.push(settingRow('Reset everything', 'Reset', function () {
-      Store.reset();
-      tickClock();
-      loadWeather();
-      toast('Settings reset');
-    }));
-    return items;
+  function capitalize(text) {
+    return text.charAt(0).toUpperCase() + text.slice(1);
   }
 
+  function onOff(key) {
+    return Store.get(key) ? 'On' : 'Off';
+  }
+
+  function toggle(label, key, after) {
+    return settingRow(label, onOff(key), function () {
+      Store.set(key, !Store.get(key));
+      if (after) after();
+    });
+  }
+
+  function link(page, value) {
+    return { type: 'link', label: PAGES[page].title, value: value, page: page };
+  }
+
+  function tizenbrewState() {
+    var tb = data.tizenbrew;
+    return {
+      tb: tb,
+      autoOpen: !!tb && tb.autoLaunchModule === Platform.selfModuleName(),
+      autoService: !!tb && tb.autoLaunchServiceList.indexOf(Platform.serviceModuleName()) !== -1
+    };
+  }
+
+  var PAGE_BUILDERS = {
+    root: function () {
+      var st = tizenbrewState();
+      var links = Store.get('webLinks').length;
+      return [
+        link('general', (Store.get('use24h') ? '24-hour' : '12-hour') + ' · ' + Store.get('city')),
+        link('startup', st.tb ? (st.autoOpen ? 'Opens with TizenBrew' : 'Manual') : 'Unavailable'),
+        link('phone', 'QR code'),
+        link('web', links + (links === 1 ? ' site' : ' sites')),
+        link('layout', Store.get('groupApps') ? 'By category' : 'Single row')
+      ];
+    },
+
+    general: function () {
+      return [
+        settingRow('Clock', Store.get('use24h') ? '24-hour' : '12-hour', function () {
+          Store.set('use24h', !Store.get('use24h'));
+          tickClock();
+        }),
+        toggle('Weather', 'showWeather', loadWeather),
+        { type: 'input', label: 'City', value: Store.get('city'), onSave: function (value) {
+          if (!value) return;
+          Store.set('city', value);
+          loadWeather();
+        } },
+        toggle('UI sounds', 'sounds', function () {
+          Sounds.setEnabled(Store.get('sounds'));
+          Sounds.play('select');
+        }),
+        // Cycles through styles and plays the new one so you can choose by ear.
+        settingRow('Sound style', capitalize(Store.get('soundStyle')), function () {
+          var styles = Sounds.styles;
+          var next = styles[(styles.indexOf(Store.get('soundStyle')) + 1) % styles.length];
+          Store.set('soundStyle', next);
+          Sounds.setStyle(next);
+          setTimeout(function () { Sounds.play('select'); }, 90);
+        })
+      ];
+    },
+
+    startup: function () {
+      var st = tizenbrewState();
+      return [
+        settingRow('Open TVDeck with TizenBrew', st.tb ? (st.autoOpen ? 'On' : 'Off') : 'Unavailable', function () {
+          if (!st.tb) return toast('Needs the TVDeck service');
+          Platform.setAutoLaunch(!st.autoOpen);
+          st.tb.autoLaunchModule = st.autoOpen ? '' : Platform.selfModuleName();
+        }),
+        settingRow('Start phone service at boot', st.tb ? (st.autoService ? 'On' : 'Off') : 'Unavailable', function () {
+          if (!st.tb) return toast('Needs the TVDeck service');
+          Platform.setServiceAutoLaunch(!st.autoService, st.tb.autoLaunchServiceList);
+          var name = Platform.serviceModuleName();
+          st.tb.autoLaunchServiceList = st.tb.autoLaunchServiceList.filter(function (n) { return n !== name; });
+          if (!st.autoService) st.tb.autoLaunchServiceList.push(name);
+        })
+      ];
+    },
+
+    phone: function () {
+      return [
+        settingRow('Set up from your phone', 'Show QR code', function () {
+          closeSettings();
+          showOverlay({ type: 'phone' });
+          return true;
+        })
+      ];
+    },
+
+    web: function () {
+      var items = Store.get('webLinks').map(function (site, i) {
+        return settingRow(site.name, 'Remove', function () {
+          var links = Store.get('webLinks').slice();
+          links.splice(i, 1);
+          Store.set('webLinks', links);
+          Store.set('favorites', Store.get('favorites').filter(function (key) { return key !== 'web:' + site.url; }));
+          toast('Removed ' + site.name);
+        });
+      });
+      var draft = { name: '', url: '' };
+      items.push({ type: 'section', label: 'Add a site' });
+      items.push({ type: 'input', label: 'Name', value: '', onSave: function (v) { draft.name = v; } });
+      items.push({ type: 'input', label: 'URL', value: '', placeholder: 'https://', onSave: function (v) { draft.url = v; } });
+      items.push(settingRow('Add shortcut', '', function () {
+        var url = draft.url.trim();
+        if (!url) return toast('Enter a URL first');
+        if (!/^https?:\/\//.test(url)) url = 'https://' + url;
+        var name = draft.name.trim() || hostOf(url);
+        Store.set('webLinks', Store.get('webLinks').concat([{ name: name, url: url }]));
+        toast('Added ' + name);
+      }));
+      return items;
+    },
+
+    layout: function () {
+      var hiddenCount = Store.get('hiddenApps').length;
+      return [
+        toggle('Group apps by category', 'groupApps'),
+        toggle('Recent row', 'showRecent'),
+        toggle('Ambient screen when idle', 'ambient', noteActivity),
+        settingRow('Clear recent', Store.get('recent').length ? 'Clear' : 'Empty', function () {
+          Store.set('recent', []);
+          toast('Recent cleared');
+        }),
+        settingRow('Hidden apps', hiddenCount ? 'Show ' + hiddenCount : 'None', function () {
+          Store.set('hiddenApps', []);
+          toast('All apps visible');
+        }),
+        { type: 'section', label: '' },
+        settingRow('Reset everything', '', function () {
+          Store.reset();
+          Sounds.setEnabled(Store.get('sounds'));
+          Sounds.setStyle(Store.get('soundStyle'));
+          tickClock();
+          loadWeather();
+          toast('Settings reset');
+        })
+      ];
+    }
+  };
+
   function renderSettings() {
-    settingsItems = buildSettings();
+    var page = PAGES[settingsPage];
+    els.settingsGlyph.innerHTML = Icons.svg(page.glyph);
+    els.settingsTitle.textContent = page.title;
+    els.settingsSubtitle.textContent = page.subtitle;
+
+    settingsItems = PAGE_BUILDERS[settingsPage]();
     els.settingsList.innerHTML = '';
     settingsItems.forEach(function (item) {
       var node;
       if (item.type === 'section') {
         node = el('div', 'setting-section', item.label);
       } else {
-        node = el('div', 'setting');
+        node = el('div', 'setting' + (item.type === 'link' ? ' setting-link' : ''));
         node.style.setProperty('--i', Math.min(els.settingsList.children.length, 14));
         node.appendChild(el('span', '', item.label));
         if (item.type === 'input') {
           var input = document.createElement('input');
-          input.type = item.label.indexOf('URL') !== -1 ? 'url' : 'text';
+          input.type = item.label === 'URL' ? 'url' : 'text';
           input.value = item.value;
           input.placeholder = item.placeholder || '';
           input.addEventListener('change', function () { item.onSave(input.value.trim()); });
           node.appendChild(input);
           item.input = input;
-        } else {
+        } else if (item.value) {
           node.appendChild(el('span', 'setting-value', item.value));
         }
       }
@@ -886,6 +960,14 @@
     });
     if (!isSelectable(settingsIndex)) settingsIndex = nextSelectable(-1, 1);
     focusSetting();
+  }
+
+  function goToPage(page, back) {
+    settingsPage = page;
+    renderSettings();
+    replay(els.settingsPanel, back ? 'page-back' : 'page-forward');
+    replay(els.settingsSide, 'page-swap');
+    renderHints();
   }
 
   function isSelectable(i) {
@@ -906,15 +988,17 @@
     // Glide the list so the focused row sits in the middle band of the panel.
     var node = settingsItems[settingsIndex] && settingsItems[settingsIndex].el;
     if (!node) return;
-    var panelH = els.settingsList.parentNode.clientHeight;
+    var panelH = els.settingsPanel.clientHeight;
     var listH = els.settingsList.offsetHeight;
     var target = node.offsetTop + node.offsetHeight / 2 - panelH / 2;
-    var offset = Math.max(0, Math.min(target, listH - panelH));
+    // Short pages sit centered; long ones keep the focused row mid-panel.
+    var offset = listH <= panelH ? (listH - panelH) / 2 : Math.max(0, Math.min(target, listH - panelH));
     els.settingsList.style.transform = 'translateY(' + (-offset) + 'px)';
   }
 
   function openSettings() {
     mode = 'settings';
+    settingsPage = 'root';
     settingsIndex = 0;
     document.body.classList.add('sheet-on');
     animateIn(els.settings);
@@ -934,11 +1018,24 @@
     showNextMessage();
   }
 
+  // Back: page -> menu (focus restored), menu -> close.
+  function settingsBack() {
+    if (settingsPage === 'root') return closeSettings();
+    settingsIndex = rootIndex;
+    goToPage('root', true);
+  }
+
   function activateSetting() {
     var item = settingsItems[settingsIndex];
     if (!item) return;
     if (item.type === 'input') {
       item.input.focus();
+      return;
+    }
+    if (item.type === 'link') {
+      rootIndex = settingsIndex;
+      settingsIndex = 0;
+      goToPage(item.page, false);
       return;
     }
     // An action returning true has left the settings panel.
@@ -1181,6 +1278,9 @@
         activateSetting();
         break;
       case KEY.BACK:
+        Sounds.play('back');
+        settingsBack();
+        break;
       case KEY.GREEN:
         Sounds.play('back');
         closeSettings();
@@ -1232,6 +1332,7 @@
 
   els.settingsGlyph.innerHTML = Icons.svg('settings');
   Sounds.setEnabled(Store.get('sounds'));
+  Sounds.setStyle(Store.get('soundStyle'));
   Platform.registerKeys(['ColorF0Red', 'ColorF1Green', 'ColorF2Yellow', 'ColorF3Blue', 'ChannelUp', 'ChannelDown']);
   tickClock();
   setInterval(tickClock, 5000);
