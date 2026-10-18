@@ -310,7 +310,7 @@ html, body {
   text-overflow: ellipsis;
 }
 
-/* Light sheen: a wide gradient that glides in from the left on focus */
+/* Light sheen: a soft, broad highlight (no hard band) that drifts in on focus */
 .tile-shine {
   position: absolute;
   top: 0;
@@ -318,7 +318,12 @@ html, body {
   left: 0;
   width: 220%;
   opacity: 0;
-  background: linear-gradient(110deg, rgba(255, 255, 255, 0) 30%, rgba(255, 255, 255, 0.26) 42%, rgba(255, 255, 255, 0.06) 50%, rgba(255, 255, 255, 0) 58%);
+  background: linear-gradient(115deg,
+    rgba(255, 255, 255, 0) 22%,
+    rgba(255, 255, 255, 0.035) 34%,
+    rgba(255, 255, 255, 0.09) 42%,
+    rgba(255, 255, 255, 0.035) 50%,
+    rgba(255, 255, 255, 0) 62%);
   transform: translateX(-62%);
   transition: opacity 300ms var(--ease), transform 0s 300ms;
 }
@@ -353,9 +358,9 @@ html, body {
 .tile.focused .tile-glyph { color: var(--text); }
 
 .tile.focused .tile-shine {
-  opacity: 1;
-  transform: translateX(-12%);
-  transition: opacity 250ms var(--ease), transform 1100ms var(--ease);
+  opacity: 0.8;
+  transform: translateX(-22%);
+  transition: opacity 600ms var(--ease), transform 1800ms var(--ease);
 }
 
 .tile.focused .tile-caption {
@@ -391,20 +396,25 @@ html, body {
 @keyframes bump-down { 30% { transform: translateY(0.55vw); } to { transform: none; } }
 @keyframes bump-up { 30% { transform: translateY(-0.55vw); } to { transform: none; } }
 
-/* Idle: the focused tile breathes and light glints across it now and then */
-body.idle .tile.focused .tile-art { animation: float 4.8s var(--sine) infinite alternate; }
-body.idle .tile.focused .tile-shine { animation: glint 7s var(--ease) 0.4s infinite; }
+/* Idle: the focused tile barely breathes; a faint light passes now and then */
+body.idle .tile.focused .tile-art { animation: float 6.5s var(--sine) infinite alternate; }
+body.idle .tile.focused .tile-shine { animation: glint 12s var(--sine) 1s infinite; }
 
 @keyframes float {
   from { transform: translateY(0); }
-  to { transform: translateY(-0.28vw); }
+  to { transform: translateY(-0.12vw); }
 }
 
+/* One slow pass left to right, then the resting highlight fades back in */
 @keyframes glint {
-  0% { opacity: 0; transform: translateX(-62%); }
-  6% { opacity: 1; }
-  30% { opacity: 0; transform: translateX(18%); }
-  100% { opacity: 0; transform: translateX(18%); }
+  0% { opacity: 0.8; transform: translateX(-22%); }
+  6% { opacity: 0; transform: translateX(-22%); }
+  7% { opacity: 0; transform: translateX(-62%); }
+  24% { opacity: 0.55; transform: translateX(-20%); }
+  40% { opacity: 0; transform: translateX(18%); }
+  41% { opacity: 0; transform: translateX(-22%); }
+  52% { opacity: 0.8; transform: translateX(-22%); }
+  100% { opacity: 0.8; transform: translateX(-22%); }
 }
 
 .tile.moving { animation: jiggle 260ms var(--press) infinite alternate; }
