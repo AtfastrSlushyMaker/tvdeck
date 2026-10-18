@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=1920, initial-scale=1">
+  <title>TVDeck</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="backdrop"></div>
+
+  <header class="topbar">
+    <div class="clock-block">
+      <div id="clock" class="clock">--:--</div>
+      <div id="date" class="date"></div>
+    </div>
+    <div class="weather" id="weather" hidden>
+      <span id="weather-icon" class="weather-icon"></span>
+      <div>
+        <div id="weather-temp" class="weather-temp"></div>
+        <div id="weather-label" class="weather-label"></div>
+      </div>
+    </div>
+  </header>
+
+  <main id="rows" class="rows"></main>
+
+  <footer class="hints" id="hints"></footer>
+
+  <div id="toast" class="toast" hidden></div>
+
+  <section id="settings" class="settings" hidden>
+    <div class="settings-panel">
+      <h2>Settings</h2>
+      <div id="settings-list" class="settings-list"></div>
+      <p class="settings-foot">Back to close</p>
+    </div>
+  </section>
+
+  <script src="js/platform.js"></script>
+  <script src="js/store.js"></script>
+  <script src="js/weather.js"></script>
+  <script src="js/launcher.js"></script>
+</body>
+</html>

@@ -1,0 +1,30 @@
+{
+  "name": "tvdeck",
+  "version": "0.1.0",
+  "description": "TVDeck: a fast, ad-free home launcher for Samsung Tizen TVs, runs as a TizenBrew app module.",
+  "packageType": "app",
+  "appName": "TVDeck",
+  "appPath": "app/index.html",
+  "keys": [
+    "ColorF0Red",
+    "ColorF1Green",
+    "ColorF2Yellow",
+    "ColorF3Blue",
+    "ChannelUp",
+    "ChannelDown"
+  ],
+  "files": [
+    "app/"
+  ],
+  "keywords": [
+    "tizenbrew",
+    "tizen",
+    "samsung",
+    "launcher",
+    "smart-tv"
+  ],
+  "scripts": {
+    "dev": "python3 -m http.server 5173 --directory app"
+  },
+  "license": "MIT"
+}
