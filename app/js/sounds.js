@@ -5,44 +5,52 @@
  * band-pass filters excited by a tiny impulse), so it rings like glass or
  * wood, then passes through a gentle low-pass and a short room tail.
  *
- * Styles: glass (default), wood, soft. On by default; Settings can turn
+ * Styles: soft (default), glass, wood. On by default; Settings can turn
  * sounds off or change the style.
  */
 var Sounds = (function () {
   'use strict';
 
-  // Each voice: modes [frequency Hz, Q, level], optional low body
-  // [start Hz, end Hz, level, seconds], and an overall gain.
+  // A voice is one tap: modes [frequency Hz, Q, level], an optional low body
+  // [start Hz, end Hz, level, seconds], and a gain. A voice can instead be a
+  // sequence of taps: { sequence: [[voice, delay seconds], ...] }.
+
+  // Glass taps. Enter and Back reuse the move tap so they sound related.
+  var GLASS_TAP = { modes: [[1400, 24, 1], [2800, 30, 0.35]], body: [420, 300, 0.35, 0.05], gain: 1 };
+  var GLASS_LOW = { modes: [[1050, 24, 1], [2100, 30, 0.35]], body: [315, 225, 0.45, 0.06], gain: 1 };
+  var GLASS_LOW_SOFT = { modes: GLASS_LOW.modes, body: GLASS_LOW.body, gain: 0.75 };
+  var GLASS_TAP_SOFT = { modes: GLASS_TAP.modes, body: GLASS_TAP.body, gain: 0.7 };
+
   var STYLES = {
+    soft: {
+      move: { modes: [[1650, 6, 1]], gain: 1 },
+      select: { modes: [[880, 5, 1]], body: [230, 160, 0.6, 0.09], gain: 1 },
+      edge: { modes: [[260, 4, 1]], gain: 1 },
+      back: { modes: [[520, 5, 1]], gain: 1 }
+    },
     glass: {
-      move: { modes: [[2650, 34, 1], [5300, 40, 0.35]], gain: 1 },
-      select: { modes: [[1320, 26, 1], [2640, 30, 0.45], [3960, 34, 0.2]], body: [240, 150, 0.5, 0.09], gain: 1 },
-      edge: { modes: [[760, 14, 1]], gain: 1 },
-      back: { modes: [[1980, 30, 1], [3960, 36, 0.3]], gain: 1 }
+      move: GLASS_TAP,
+      // Rising pair = confirm; falling pair = dismiss.
+      select: { sequence: [[GLASS_LOW, 0], [GLASS_TAP_SOFT, 0.045]] },
+      back: { sequence: [[GLASS_TAP, 0], [GLASS_LOW_SOFT, 0.045]] },
+      edge: { modes: [[430, 12, 1], [860, 16, 0.3]], body: [160, 100, 0.5, 0.08], gain: 1 }
     },
     wood: {
       move: { modes: [[1560, 13, 1], [3400, 16, 0.4]], gain: 1 },
       select: { modes: [[540, 9, 1], [1220, 12, 0.55], [2600, 14, 0.2]], body: [180, 110, 0.4, 0.08], gain: 1 },
       edge: { modes: [[320, 7, 1]], gain: 1 },
       back: { modes: [[980, 11, 1], [2100, 13, 0.35]], gain: 1 }
-    },
-    soft: {
-      move: { modes: [[1650, 6, 1]], gain: 1 },
-      select: { modes: [[880, 5, 1]], body: [230, 160, 0.6, 0.09], gain: 1 },
-      edge: { modes: [[260, 4, 1]], gain: 1 },
-      back: { modes: [[520, 5, 1]], gain: 1 }
     }
   };
 
-  // Target peak per voice. calibrate() measures each voice offline so every
-  // style plays at these levels, whatever its filters do to the energy.
-  var LEVEL = { move: 0.11, select: 0.2, edge: 0.13, back: 0.12 };
-  var NORMALIZE = {};
+  // Target peak per tap. calibrate() measures each tap offline and stores
+  // tap.norm so every tap plays at these levels, whatever its filters do.
+  var LEVEL = { move: 0.12, select: 0.17, edge: 0.14, back: 0.13 };
 
   var ctx = null;
   var master = null;
   var enabled = false;
-  var style = 'glass';
+  var style = 'soft';
 
   // Shared output chain: low-pass (takes the edge off) + short room tail.
   function chain(ac) {
@@ -51,9 +59,9 @@ var Sounds = (function () {
     tone.type = 'lowpass';
     tone.frequency.value = 7000;
     var room = ac.createConvolver();
-    room.buffer = roomImpulse(ac, 0.35);
+    room.buffer = roomImpulse(ac, 0.45);
     var wet = ac.createGain();
-    wet.gain.value = 0.14;
+    wet.gain.value = 0.17;
     input.connect(tone);
     tone.connect(ac.destination);
     tone.connect(room);
@@ -103,7 +111,9 @@ var Sounds = (function () {
       var b = voice.body;
       var osc = ac.createOscillator();
       var amp = ac.createGain();
-      var peak = Math.max(0.0002, b[2] * gain * (voice.bodyScale || 1));
+      // gain carries the tap's normalization; undo it so the plain sine body
+      // keeps its own level.
+      var peak = Math.max(0.0002, b[2] * gain * voice.gain / (voice.norm || 1));
       osc.type = 'sine';
       osc.frequency.setValueAtTime(b[0], t);
       osc.frequency.exponentialRampToValueAtTime(b[1], t + b[3]);
@@ -130,6 +140,10 @@ var Sounds = (function () {
 
   var last = 0;
 
+  function taps(voice) {
+    return voice.sequence || [[voice, 0]];
+  }
+
   function play(kind) {
     if (!enabled) return;
     // Key repeat can fire faster than a tick should sound.
@@ -139,34 +153,37 @@ var Sounds = (function () {
     var ac = context();
     var voice = STYLES[style][kind];
     if (!ac || !voice) return;
-    var norm = (NORMALIZE[style] && NORMALIZE[style][kind]) || 1;
-    strike(ac, master, voice, LEVEL[kind] * norm);
+    var t = ac.currentTime;
+    taps(voice).forEach(function (tap) {
+      strike(ac, master, tap[0], LEVEL[kind] * (tap[0].norm || 1), t + tap[1]);
+    });
   }
 
-  // Renders the resonant part of every voice offline and stores a factor that
-  // brings its peak to 1, so LEVEL alone sets loudness. Runs once at startup.
+  // Renders the resonant part of every tap offline and stores tap.norm, the
+  // factor that brings its peak to 1, so LEVEL alone sets loudness.
   function calibrate() {
     var Offline = window.OfflineAudioContext || window.webkitOfflineAudioContext;
     if (!Offline) return;
+    var seen = [];
     Object.keys(STYLES).forEach(function (name) {
-      NORMALIZE[name] = {};
       Object.keys(STYLES[name]).forEach(function (kind) {
-        var voice = STYLES[name][kind];
-        var resonant = { modes: voice.modes, gain: voice.gain };
-        var off = new Offline(1, 8820, 22050);
-        strike(off, off.destination, resonant, 1, 0);
-        var done = function (buffer) {
-          var data = buffer.getChannelData(0);
-          var peak = 0;
-          for (var i = 0; i < data.length; i++) peak = Math.max(peak, Math.abs(data[i]));
-          var factor = peak > 0 ? 1 / peak : 1;
-          NORMALIZE[name][kind] = factor;
-          // The body is a plain sine: undo the factor so it stays at its own level.
-          voice.bodyScale = 1 / factor;
-        };
-        var result = off.startRendering();
-        if (result && result.then) result.then(done);
-        else off.oncomplete = function (e) { done(e.renderedBuffer); };
+        taps(STYLES[name][kind]).forEach(function (tap) {
+          var voice = tap[0];
+          if (seen.indexOf(voice) !== -1) return;
+          seen.push(voice);
+          var off = new Offline(1, 8820, 22050);
+          strike(off, off.destination, { modes: voice.modes, gain: voice.gain }, 1, 0);
+          var done = function (buffer) {
+            var data = buffer.getChannelData(0);
+            var peak = 0;
+            for (var i = 0; i < data.length; i++) peak = Math.max(peak, Math.abs(data[i]));
+            // Softer variants share modes: normalize to the gain-1 peak.
+            voice.norm = peak > 0 ? voice.gain / peak : 1;
+          };
+          var result = off.startRendering();
+          if (result && result.then) result.then(done);
+          else off.oncomplete = function (e) { done(e.renderedBuffer); };
+        });
       });
     });
   }
@@ -182,5 +199,5 @@ var Sounds = (function () {
 
   calibrate();
 
-  return { play: play, setEnabled: setEnabled, setStyle: setStyle, styles: Object.keys(STYLES), normalize: NORMALIZE };
+  return { play: play, setEnabled: setEnabled, setStyle: setStyle, styles: Object.keys(STYLES), voices: STYLES };
 })();

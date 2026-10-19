@@ -14,7 +14,7 @@ var Store = (function () {
     recent: [],             // item keys, most recent first
     openedAt: {},           // item key -> last opened (ms), for the shelf
     sounds: true,           // synthesized UI sounds
-    soundStyle: 'glass',    // glass | wood | soft
+    soundStyle: 'soft',     // soft | glass | wood
     showRecent: true,
     groupApps: true,        // one row per app category
     ambient: true,          // ambient screen after a few idle minutes

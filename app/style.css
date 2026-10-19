@@ -109,11 +109,70 @@ html, body {
   height: 46vh;
 }
 
-.shelf-status {
-  position: absolute;
-  top: 2.6vw;
-  right: var(--edge);
-  text-align: right;
+/* Fixed top bar: stays put while the page scrolls under it */
+.topbar {
+  position: fixed;
+  z-index: 3;
+  top: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  padding: 2.3vw var(--edge) 0;
+  pointer-events: none;
+  transition: opacity 900ms var(--ease);
+}
+
+.topbar > * { pointer-events: auto; }
+
+.shelf-status { text-align: right; }
+
+/* Scrolled: the bar condenses to time and weather */
+.shelf-status .date,
+.shelf-status .ticker {
+  max-height: 1.6vw;
+  overflow: hidden;
+  transition: opacity 300ms var(--ease), max-height 450ms var(--ease), margin 450ms var(--ease);
+}
+
+body.scrolled .shelf-status .date,
+body.scrolled .shelf-status .ticker {
+  min-height: 0;
+  max-height: 0;
+  margin-top: 0;
+  opacity: 0;
+}
+
+/* Quick access, reached with Up from the dock */
+.nav { display: flex; }
+
+.nav-btn {
+  display: flex;
+  align-items: center;
+  margin-right: 0.8vw;
+  padding: 0.5vw 1.1vw 0.5vw 0.85vw;
+  border-radius: 2vw;
+  font-size: 0.95vw;
+  font-weight: 500;
+  color: var(--text-2);
+  background: rgba(255, 255, 255, 0.08);
+  transition: transform 420ms var(--spring), background-color 250ms var(--ease), color 250ms var(--ease);
+}
+
+.nav-icon {
+  width: 1.15vw;
+  height: 1.15vw;
+  margin-right: 0.5vw;
+}
+
+.nav-icon svg { display: block; width: 100%; height: 100%; }
+
+.nav-btn.focused {
+  color: #000;
+  background: rgba(255, 255, 255, 0.94);
+  transform: scale(1.06);
+  box-shadow: 0 0.6vw 1.4vw rgba(0, 0, 0, 0.3);
 }
 
 .clock {
@@ -145,7 +204,7 @@ html, body {
   text-overflow: ellipsis;
 }
 
-.ticker.tick { animation: tick 700ms var(--ease) both; }
+.ticker.tick { animation: tick 700ms var(--ease); }
 
 @keyframes tick {
   from { opacity: 0; transform: translateY(0.6vw); }
@@ -513,7 +572,7 @@ body.idle .tile.focused .tile-shine { animation: glint 12s var(--sine) 1s infini
   top: 0;
   left: 0;
   right: 0;
-  height: 6.5vw;
+  height: 7.5vw;
   opacity: 0;
   background: linear-gradient(180deg, #000 45%, rgba(0, 0, 0, 0));
   pointer-events: none;
@@ -522,12 +581,23 @@ body.idle .tile.focused .tile-shine { animation: glint 12s var(--sine) 1s infini
 
 body.scrolled .topfade { opacity: 1; }
 
+.bottomfade {
+  position: fixed;
+  z-index: 2;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 4.5vw;
+  background: linear-gradient(0deg, rgba(0, 0, 0, 0.85), rgba(0, 0, 0, 0));
+  pointer-events: none;
+}
+
 /* Remote-key hints, kept faint */
 .hints {
   position: fixed;
   z-index: 3;
   left: var(--edge);
-  top: 2.9vw;
+  bottom: 1.4vw;
   display: flex;
   font-size: 0.85vw;
   color: var(--text-3);
@@ -746,6 +816,45 @@ body.sheet-on .viewport {
 
 .setting.focused input { color: #000; }
 
+/* Unavailable rows: dimmed, skipped by focus, reason shown as the value */
+.setting.is-disabled { color: var(--text-3); background: rgba(255, 255, 255, 0.03); }
+.setting.is-disabled .setting-value { color: var(--text-3); }
+.setting.is-disabled input { color: var(--text-3); }
+
+/* Guidance under a page, in place of error toasts */
+.setting-note {
+  margin: 0.9vw 1.1vw 0;
+  font-size: 0.9vw;
+  line-height: 1.45;
+  color: var(--text-2);
+}
+
+/* Inline selector: Left/Right moves the highlight */
+.choice-options { display: flex; }
+
+.tile, .setting, .choice-option { cursor: default; }
+
+.choice-option {
+  margin-left: 0.35vw;
+  padding: 0.25vw 0.75vw;
+  border-radius: 1vw;
+  font-size: 0.9vw;
+  color: var(--text-2);
+  transition: background-color 250ms var(--ease), color 250ms var(--ease);
+}
+
+.choice-option.selected {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.16);
+}
+
+.setting.focused .choice-option { color: rgba(0, 0, 0, 0.5); }
+.setting.focused .choice-option.selected { color: #fff; background: #1c1c1e; }
+.setting.is-disabled .choice-option.selected { color: var(--text-3); background: rgba(255, 255, 255, 0.06); }
+
+/* Destructive row reads red once focused */
+.setting-danger.focused { color: #d70015; }
+
 /* Overlays: frosted card */
 .overlay {
   position: fixed;
@@ -857,7 +966,7 @@ body.sheet-on .viewport {
   to { opacity: 1; }
 }
 
-body.booting .shelf-status { animation: fade-in 1200ms var(--ease) both; }
+body.booting .topbar { animation: fade-in 1200ms var(--ease) both; }
 body.booting .shelf-info { animation: rise 1000ms var(--ease) 80ms both; }
 
 body.booting .row {
@@ -934,6 +1043,7 @@ body.booting .tile-art {
 
 body.ambient-on .viewport,
 body.ambient-on .hints,
+body.ambient-on .topbar,
 body.ambient-on .topfade { opacity: 0; }
 
 .backdrop-shade { transition: opacity 1400ms var(--ease); }
@@ -973,4 +1083,38 @@ body.idle .tile.focused:not(.full-bleed) .tile-icon { animation: float-deep 6.5s
 @keyframes float-deep {
   from { transform: translateY(0) scale(1); }
   to { transform: translateY(-0.1vw) scale(1.015); }
+}
+
+/* The top bar steps back behind sheets like the rest of the launcher */
+body.sheet-on .topbar { opacity: 0.22; }
+
+/* Overlay buttons (tvOS alert style): Left/Right to choose, OK to confirm */
+.overlay-text {
+  margin: -0.8vw 0 0;
+  color: var(--text-2);
+}
+
+.overlay-actions {
+  display: flex;
+  justify-content: center;
+  margin-top: 2vw;
+}
+
+.overlay-btn {
+  min-width: 9vw;
+  margin: 0 0.45vw;
+  padding: 0.75vw 1.6vw;
+  border-radius: 0.7vw;
+  font-size: 1.05vw;
+  font-weight: 500;
+  text-align: center;
+  background: rgba(255, 255, 255, 0.1);
+  transition: transform 420ms var(--spring), background-color 250ms var(--ease), color 250ms var(--ease);
+}
+
+.overlay-btn.focused {
+  color: #000;
+  background: rgba(255, 255, 255, 0.94);
+  transform: scale(1.06);
+  box-shadow: 0 0.6vw 1.4vw rgba(0, 0, 0, 0.3);
 }

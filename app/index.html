@@ -14,18 +14,26 @@
     <div class="backdrop-shade"></div>
   </div>
 
+  <!-- Fixed top bar: quick access on the left, time and status on the right. -->
+  <header class="topbar">
+    <nav class="nav" id="nav">
+      <div class="nav-btn" data-nav="settings"><span class="nav-icon" data-icon="settings"></span><span>Settings</span></div>
+      <div class="nav-btn" data-nav="phone"><span class="nav-icon" data-icon="phone"></span><span>Send from phone</span></div>
+    </nav>
+    <div class="shelf-status">
+      <div id="clock" class="clock">--:--</div>
+      <div id="date" class="date"></div>
+      <div class="weather" id="weather" hidden>
+        <span id="weather-temp" class="weather-temp"></span>
+        <span id="weather-label" class="weather-label"></span>
+      </div>
+      <div id="ticker" class="ticker"></div>
+    </div>
+  </header>
+
   <div class="viewport">
     <div id="page" class="page">
       <header class="shelf">
-        <div class="shelf-status">
-          <div id="clock" class="clock">--:--</div>
-          <div id="date" class="date"></div>
-          <div class="weather" id="weather" hidden>
-            <span id="weather-temp" class="weather-temp"></span>
-            <span id="weather-label" class="weather-label"></span>
-          </div>
-          <div id="ticker" class="ticker"></div>
-        </div>
         <div class="shelf-info">
           <div id="shelf-kind" class="shelf-kind"></div>
           <h1 id="shelf-title" class="shelf-title"></h1>
@@ -45,6 +53,7 @@
   </section>
 
   <div class="topfade" aria-hidden="true"></div>
+  <div class="bottomfade" aria-hidden="true"></div>
   <footer class="hints" id="hints"></footer>
 
   <div id="toast" class="toast" role="status"></div>

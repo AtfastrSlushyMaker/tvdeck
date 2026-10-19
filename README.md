@@ -8,6 +8,7 @@ TVDeck is an independent project and is not affiliated with TizenBrew or Samsung
 
 ## Features
 
+- **Top bar**: Settings and Send from phone are one press of Up away from the dock, and the time and weather stay pinned while you scroll.
 - **Favorites row**: pin any app, input, TizenBrew module or web shortcut, and reorder them.
 - **Recent row**: the last things you opened, most recent first.
 - **Inputs**: switch to HDMI 1–3 or Live TV from the launcher. Rename them or add more from your phone.
@@ -15,7 +16,7 @@ TVDeck is an independent project and is not affiliated with TizenBrew or Samsung
 - **Auto categories**: apps are sorted into Streaming, Video, Music, Sports, Kids, Games, News, Lifestyle and Utilities rows (by name, then Tizen's own category data). Turn it off in Settings for a single Apps row.
 - **Feels alive**: the backdrop takes its color from the focused app and slowly drifts; focus carries momentum, bumps at row edges, and idles with a soft float and glint; the status line under the clock rotates through your next event, what's playing and the weather.
 - **Polished motion**: exits accelerate away (ease-in) faster than entrances arrive; holding an arrow switches to quick, simple motion; logos fade in once and parallax slightly against their tiles; hints step aside after a few idle seconds.
-- **UI sounds** (on by default): modeled taps that ring like glass or wood, with a short room tail, synthesized with Web Audio (no audio files). Pick Glass, Wood or Soft in Settings → General; each style previews as you switch.
+- **UI sounds** (on by default): modeled taps that ring like glass or wood, with a short room tail, synthesized with Web Audio (no audio files). Soft is the default; pick Soft, Glass or Wood with the selector in Settings → General, and each one previews as you move to it.
 - **Ambient screen**: after 5 idle minutes the launcher fades to a large clock over a wash that cycles through your apps' colors. Any key wakes it.
 - **TizenBrew modules**: open your other modules (TizenTube, Twitch…) from the same screen.
 - **Send from phone**: scan the QR code, paste a link, and the TV offers to open it.
@@ -23,6 +24,7 @@ TVDeck is an independent project and is not affiliated with TizenBrew or Samsung
 - **Web shortcuts**: add your own sites from Settings.
 - **Clock and weather**: weather comes from [Open-Meteo](https://open-meteo.com) (no API key, no tracking).
 - **Auto-start**: open TVDeck when TizenBrew starts, and start the phone service at boot.
+- **Guided settings**: a short menu of pages; options that can't be used yet are shown disabled with the reason and what unlocks them, and destructive actions ask for a second OK in place.
 - **No ads, no telemetry**. The only outside requests are the weather lookup and the calendar and Home Assistant you configure.
 
 ## How it works
@@ -55,7 +57,8 @@ The first time it sends a remote key, the TV asks to allow "TVDeck". Accept it o
 | 🟡 Yellow | Reorder (in Favorites) or hide an app (in Apps) |
 | 🔵 Blue | Refresh everything |
 | CH+ / CH− | Jump between rows |
-| Back | Close settings, cancel a move |
+| Up (from the dock) | Top bar: Settings, Send from phone |
+| Back | Close a panel, return to the dock, then asks before leaving TVDeck |
 
 ## Install on your TV
 

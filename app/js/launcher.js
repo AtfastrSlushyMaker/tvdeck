@@ -59,6 +59,7 @@
     settingsTitle: document.getElementById('settings-title'),
     settingsSubtitle: document.getElementById('settings-subtitle'),
     settingsSide: document.querySelector('.settings-side'),
+    navButtons: Array.prototype.slice.call(document.querySelectorAll('.nav-btn')),
     settingsPanel: document.querySelector('.settings-panel')
   };
 
@@ -74,6 +75,12 @@
   var settingsItems = [];
   var settingsIndex = 0;
   var toastTimer = null;
+  var navFocus = false;     // focus is in the top bar
+  var navIndex = 0;
+  var NAV_ITEMS = [
+    { key: 'nav:settings', kind: 'tool', name: 'Settings', ref: 'settings' },
+    { key: 'nav:phone', kind: 'tool', name: 'Send from phone', ref: 'phone' }
+  ];
   var glanceSignature = '';
   var IDLE_MS = 2500;               // focused tile starts its idle shimmer
   var CALM_MS = 6000;               // remote-key hints step aside
@@ -131,11 +138,7 @@
       { id: 'modules', title: 'TizenBrew modules', items: data.modules
           .map(function (mod) { return items['mod:' + mod.fullName]; }) },
       { id: 'web', title: 'Web', items: Store.get('webLinks')
-          .map(function (link) { return items['web:' + link.url]; }) },
-      { id: 'tools', title: 'TVDeck', items: [
-          { key: 'tool:phone', kind: 'tool', name: 'Send from phone', ref: 'phone' },
-          { key: 'tool:settings', kind: 'tool', name: 'Settings', ref: 'settings' }
-        ] }
+          .map(function (link) { return items['web:' + link.url]; }) }
     ]).filter(function (row) { return row.items.length || row.empty; });
 
     // Keep each row's horizontal position across rebuilds.
@@ -286,6 +289,7 @@
         row.items.forEach(function (item, i) {
           var tile = row.glance ? renderGlance(item) : renderTile(item);
           tile.style.setProperty('--i', Math.min(i, 6));
+          tile.addEventListener('click', function () { clickTile(row, i); });
           track.appendChild(tile);
         });
         rowEl.appendChild(track);
@@ -303,8 +307,11 @@
   }
 
   function updateFocus() {
+    els.navButtons.forEach(function (btn, i) {
+      btn.classList.toggle('focused', navFocus && mode === 'home' && i === navIndex);
+    });
     rows.forEach(function (row, r) {
-      var active = r === rowIndex && mode === 'home';
+      var active = r === rowIndex && mode === 'home' && !navFocus;
       row.el.classList.toggle('active', active);
       if (!row.trackEl) return;
       var tiles = row.trackEl.children;
@@ -331,11 +338,12 @@
     if (activeRow && els.rendered) {
       var pageTop = els.page.getBoundingClientRect().top;
       var topOf = function (r) { return rows[r].el.getBoundingClientRect().top - pageTop; };
-      var margin = window.innerHeight * 0.07;
-      var viewH = window.innerHeight - els.hints.offsetHeight;
+      // Leave room for the fixed top bar above and the hints below.
+      var margin = window.innerWidth * 0.07;
+      var viewH = window.innerHeight - window.innerWidth * 0.045;
       var rowTop = topOf(rowIndex);
       var rowBottom = rowTop + activeRow.el.offsetHeight;
-      if (rowIndex === 0) {
+      if (rowIndex === 0 || navFocus) {
         scrollY = 0;
       } else if (rowTop - margin < scrollY) {
         scrollY = rowTop - margin;
@@ -462,6 +470,24 @@
   function nudge(dir) { playMotion('nudge-' + dir); Sounds.play('move'); }
   function bump(dir) { playMotion('bump-' + dir); Sounds.play('edge'); }
 
+  // Pointer: the first click focuses a tile, clicking it again opens it.
+  function clickTile(row, col) {
+    if (mode !== 'home' || moving) return;
+    var r = rows.indexOf(row);
+    if (r !== rowIndex || row.col !== col) {
+      rowIndex = r;
+      row.col = col;
+      updateFocus();
+      Sounds.play('move');
+      return;
+    }
+    var item = currentItem();
+    if (!item) return;
+    pressFocused();
+    Sounds.play('select');
+    setTimeout(function () { open(item); }, 140);
+  }
+
   function pressFocused() {
     var tile = focusedTile();
     if (!tile) return;
@@ -475,7 +501,7 @@
     var item = currentItem();
     var title = item ? item.name : 'TVDeck';
     if (els.shelfTitle.textContent !== title) replay(els.shelfInfo, 'swap');
-    els.shelfKind.textContent = row ? row.title : '';
+    els.shelfKind.textContent = navFocus ? 'TVDeck' : row ? row.title : '';
     els.shelfTitle.textContent = title;
     els.shelfMeta.textContent = item ? describe(item) : 'Press RED on any tile to pin it to the dock';
     setWash(item);
@@ -494,13 +520,14 @@
     var item = currentItem();
     var parts = [];
     if (mode === 'settings') {
-      parts.push(plainHint(settingsPage === 'root' ? 'OK to open · Back to close' : 'OK to change · Back to return'));
-    } else if (mode === 'overlay' && overlay.type === 'message') {
-      parts.push(plainHint(overlay.item.type === 'url' ? 'OK to open in browser' : 'OK to dismiss'));
-      if (overlay.item.type === 'url') parts.push(hint('yellow', 'Open in TVDeck'));
-      parts.push(plainHint('Back to dismiss'));
+      var current = settingsItems[settingsIndex];
+      parts.push(plainHint(settingsPage === 'root' ? 'OK to open · Back to close'
+        : current && current.type === 'choice' ? 'Left and right to choose · Back to return'
+        : 'OK to change · Back to return'));
     } else if (mode === 'overlay') {
       parts.push(plainHint('Back to close'));
+    } else if (navFocus) {
+      parts.push(plainHint('OK to open · Down for your apps'));
     } else if (moving) {
       parts.push(plainHint('Left and right to move · OK to drop'));
     } else {
@@ -517,6 +544,7 @@
   }
 
   function currentItem() {
+    if (navFocus) return NAV_ITEMS[navIndex];
     var row = rows[rowIndex];
     return row && row.items.length ? row.items[row.col] : null;
   }
@@ -721,11 +749,39 @@
         info.appendChild(el('p', '', 'The TVDeck service is not running.'));
         info.appendChild(el('p', '', 'Reopen TVDeck from TizenBrew to start it.'));
       });
+      next.buttons = [{ label: 'Done', action: function () {} }];
+    } else if (next.type === 'exit') {
+      card.appendChild(el('h2', '', 'Leave TVDeck?'));
+      card.appendChild(el('p', 'overlay-text', 'You can come back any time from the TizenBrew app.'));
+      next.buttons = [
+        { label: 'Stay', action: function () {} },
+        { label: 'Exit', action: function () {
+          if (Platform.isTV) Platform.exit();
+          else toast('On the TV this returns to the Samsung home screen');
+        } }
+      ];
     } else {
       var item = next.item;
       card.appendChild(el('h2', '', item.type === 'url' ? 'Link from your phone' : 'Message from your phone'));
       card.appendChild(el('p', item.type === 'url' ? 'message-url' : 'message-text', item.value));
+      next.buttons = item.type === 'url' ? [
+        { label: 'Open in browser', action: function () { Platform.openInBrowser(item.value); } },
+        { label: 'Open here', action: function () { Platform.openUrl(item.value); } },
+        { label: 'Dismiss', action: function () {} }
+      ] : [{ label: 'Dismiss', action: function () {} }];
     }
+
+    // tvOS-style buttons: Left/Right to choose, OK to confirm, Back cancels.
+    next.index = 0;
+    var actions = el('div', 'overlay-actions');
+    next.buttonEls = next.buttons.map(function (btn, i) {
+      var b = el('div', 'overlay-btn', btn.label);
+      b.addEventListener('click', function () { next.index = i; runOverlayButton(); });
+      actions.appendChild(b);
+      return b;
+    });
+    card.appendChild(actions);
+    focusOverlayButton();
 
     document.body.classList.add('sheet-on');
     animateIn(els.overlay);
@@ -742,21 +798,29 @@
     showNextMessage();
   }
 
+  function focusOverlayButton() {
+    overlay.buttonEls.forEach(function (b, i) { b.classList.toggle('focused', i === overlay.index); });
+  }
+
+  function runOverlayButton() {
+    var action = overlay.buttons[overlay.index].action;
+    Sounds.play('select');
+    closeOverlay();
+    action();
+  }
+
   function handleOverlayKey(key) {
-    if (overlay.type === 'message') {
-      var item = overlay.item;
-      if (key === KEY.ENTER) {
-        closeOverlay();
-        if (item.type === 'url') Platform.openInBrowser(item.value);
-      } else if (key === KEY.YELLOW && item.type === 'url') {
-        closeOverlay();
-        Platform.openUrl(item.value);
-      } else if (key === KEY.BACK) {
-        closeOverlay();
-      }
-      return;
+    if (key === KEY.LEFT || key === KEY.RIGHT) {
+      var next = overlay.index + (key === KEY.LEFT ? -1 : 1);
+      if (next < 0 || next >= overlay.buttons.length) return Sounds.play('edge');
+      overlay.index = next;
+      focusOverlayButton();
+      Sounds.play('move');
+    } else if (key === KEY.ENTER) {
+      runOverlayButton();
+    } else if (key === KEY.BACK) {
+      closeOverlay();
     }
-    if (key === KEY.BACK || key === KEY.ENTER) closeOverlay();
   }
 
   /* ---------- Settings ---------- */
@@ -774,9 +838,29 @@
 
   var settingsPage = 'root';
   var rootIndex = 0;          // where the menu focus was before opening a page
+  var webDraft = { name: '', url: '' };
+  var resetArmed = false;     // "Reset everything" needs a second OK
 
-  function settingRow(label, value, action) {
-    return { type: 'row', label: label, value: value, action: action };
+  // Rows that can't be used are shown disabled with the reason in place of
+  // the value, and focus skips them, instead of failing with a toast.
+  function settingRow(label, value, action, disabledReason) {
+    return { type: 'row', label: label, value: disabledReason || value, action: action, disabled: !!disabledReason };
+  }
+
+  function choice(label, options, value, onChange, disabled) {
+    return { type: 'choice', label: label, options: options, value: value, onChange: onChange, disabled: !!disabled };
+  }
+
+  function note(text) {
+    return { type: 'note', label: text };
+  }
+
+  function serviceRunning() {
+    return !!data.tizenbrew;
+  }
+
+  function validUrl(text) {
+    return /^(https?:\/\/)?[^\s.\/]+\.[^\s]{2,}$/i.test(text.trim());
   }
 
   function capitalize(text) {
@@ -787,11 +871,11 @@
     return Store.get(key) ? 'On' : 'Off';
   }
 
-  function toggle(label, key, after) {
+  function toggle(label, key, after, disabledReason) {
     return settingRow(label, onOff(key), function () {
       Store.set(key, !Store.get(key));
       if (after) after();
-    });
+    }, disabledReason);
   }
 
   function link(page, value) {
@@ -813,8 +897,8 @@
       var links = Store.get('webLinks').length;
       return [
         link('general', (Store.get('use24h') ? '24-hour' : '12-hour') + ' · ' + Store.get('city')),
-        link('startup', st.tb ? (st.autoOpen ? 'Opens with TizenBrew' : 'Manual') : 'Unavailable'),
-        link('phone', 'QR code'),
+        link('startup', st.tb ? (st.autoOpen ? 'Opens with TizenBrew' : 'Manual') : 'Service not running'),
+        link('phone', serviceRunning() ? 'QR code' : 'Service not running'),
         link('web', links + (links === 1 ? ' site' : ' sites')),
         link('layout', Store.get('groupApps') ? 'By category' : 'Single row')
       ];
@@ -827,52 +911,55 @@
           tickClock();
         }),
         toggle('Weather', 'showWeather', loadWeather),
-        { type: 'input', label: 'City', value: Store.get('city'), onSave: function (value) {
-          if (!value) return;
-          Store.set('city', value);
-          loadWeather();
-        } },
+        { type: 'input', label: 'City', value: Store.get('city'), disabled: !Store.get('showWeather'),
+          onSave: function (value) {
+            if (!value) return;
+            Store.set('city', value);
+            loadWeather();
+          } },
         toggle('UI sounds', 'sounds', function () {
           Sounds.setEnabled(Store.get('sounds'));
           Sounds.play('select');
         }),
-        // Cycles through styles and plays the new one so you can choose by ear.
-        settingRow('Sound style', capitalize(Store.get('soundStyle')), function () {
-          var styles = Sounds.styles;
-          var next = styles[(styles.indexOf(Store.get('soundStyle')) + 1) % styles.length];
-          Store.set('soundStyle', next);
-          Sounds.setStyle(next);
-          setTimeout(function () { Sounds.play('select'); }, 90);
-        })
+        // Left/Right picks a style and plays it, so you choose by ear.
+        choice('Sound style', Sounds.styles.map(function (name) { return [name, capitalize(name)]; }),
+          Store.get('soundStyle'), function (next) {
+            Store.set('soundStyle', next);
+            Sounds.setStyle(next);
+            setTimeout(function () { Sounds.play('select'); }, 60);
+          }, !Store.get('sounds'))
       ];
     },
 
     startup: function () {
       var st = tizenbrewState();
-      return [
-        settingRow('Open TVDeck with TizenBrew', st.tb ? (st.autoOpen ? 'On' : 'Off') : 'Unavailable', function () {
-          if (!st.tb) return toast('Needs the TVDeck service');
+      var off = st.tb ? null : 'Off';
+      var items = [
+        settingRow('Open TVDeck with TizenBrew', st.autoOpen ? 'On' : 'Off', function () {
           Platform.setAutoLaunch(!st.autoOpen);
           st.tb.autoLaunchModule = st.autoOpen ? '' : Platform.selfModuleName();
-        }),
-        settingRow('Start phone service at boot', st.tb ? (st.autoService ? 'On' : 'Off') : 'Unavailable', function () {
-          if (!st.tb) return toast('Needs the TVDeck service');
+        }, off),
+        settingRow('Start phone service at boot', st.autoService ? 'On' : 'Off', function () {
           Platform.setServiceAutoLaunch(!st.autoService, st.tb.autoLaunchServiceList);
           var name = Platform.serviceModuleName();
           st.tb.autoLaunchServiceList = st.tb.autoLaunchServiceList.filter(function (n) { return n !== name; });
           if (!st.autoService) st.tb.autoLaunchServiceList.push(name);
-        })
+        }, off)
       ];
+      if (!st.tb) items.push(note('These unlock once the TVDeck service is running. Open TVDeck from the TizenBrew app to start it.'));
+      return items;
     },
 
     phone: function () {
-      return [
+      var items = [
         settingRow('Set up from your phone', 'Show QR code', function () {
           closeSettings();
           showOverlay({ type: 'phone' });
           return true;
-        })
+        }, serviceRunning() ? null : 'Unavailable')
       ];
+      if (!serviceRunning()) items.push(note('The phone page is served by the TVDeck service. Open TVDeck from the TizenBrew app to start it.'));
+      return items;
     },
 
     web: function () {
@@ -885,44 +972,61 @@
           toast('Removed ' + site.name);
         });
       });
-      var draft = { name: '', url: '' };
       items.push({ type: 'section', label: 'Add a site' });
-      items.push({ type: 'input', label: 'Name', value: '', onSave: function (v) { draft.name = v; } });
-      items.push({ type: 'input', label: 'URL', value: '', placeholder: 'https://', onSave: function (v) { draft.url = v; } });
-      items.push(settingRow('Add shortcut', '', function () {
-        var url = draft.url.trim();
-        if (!url) return toast('Enter a URL first');
+      items.push({ type: 'input', label: 'Name', value: webDraft.name, placeholder: 'Optional',
+        onInput: function (v) { webDraft.name = v; } });
+      items.push({ type: 'input', label: 'URL', value: webDraft.url, placeholder: 'example.com',
+        onInput: function (v) { webDraft.url = v; refreshAddRow(); } });
+      // Enabled only once the URL looks like a site; the hint says what's missing.
+      items.push({ type: 'row', id: 'add-site', label: 'Add shortcut', value: '', action: function () {
+        var url = webDraft.url.trim();
         if (!/^https?:\/\//.test(url)) url = 'https://' + url;
-        var name = draft.name.trim() || hostOf(url);
+        var name = webDraft.name.trim() || hostOf(url);
         Store.set('webLinks', Store.get('webLinks').concat([{ name: name, url: url }]));
+        webDraft = { name: '', url: '' };
         toast('Added ' + name);
-      }));
+      } });
       return items;
     },
 
     layout: function () {
       var hiddenCount = Store.get('hiddenApps').length;
+      var recentCount = Store.get('recent').length;
       return [
         toggle('Group apps by category', 'groupApps'),
         toggle('Recent row', 'showRecent'),
         toggle('Ambient screen when idle', 'ambient', noteActivity),
-        settingRow('Clear recent', Store.get('recent').length ? 'Clear' : 'Empty', function () {
+        settingRow('Clear recent', recentCount + (recentCount === 1 ? ' item' : ' items'), function () {
           Store.set('recent', []);
           toast('Recent cleared');
-        }),
-        settingRow('Hidden apps', hiddenCount ? 'Show ' + hiddenCount : 'None', function () {
+        }, recentCount ? null : 'Nothing to clear'),
+        settingRow('Show hidden apps', hiddenCount + (hiddenCount === 1 ? ' app' : ' apps'), function () {
           Store.set('hiddenApps', []);
           toast('All apps visible');
-        }),
+        }, hiddenCount ? null : 'None hidden'),
         { type: 'section', label: '' },
-        settingRow('Reset everything', '', function () {
-          Store.reset();
-          Sounds.setEnabled(Store.get('sounds'));
-          Sounds.setStyle(Store.get('soundStyle'));
-          tickClock();
-          loadWeather();
-          toast('Settings reset');
-        })
+        // Destructive: the first OK arms it (the row says so), the second resets.
+        { type: 'row', id: 'reset', danger: true,
+          label: resetArmed ? 'Press OK again to reset' : 'Reset everything',
+          value: resetArmed ? '' : 'Favorites, shortcuts, settings',
+          action: function () {
+            if (!resetArmed) {
+              resetArmed = true;
+              clearTimeout(els.settings.resetTimer);
+              els.settings.resetTimer = setTimeout(function () {
+                resetArmed = false;
+                if (mode === 'settings' && settingsPage === 'layout') renderSettings();
+              }, 4000);
+              return;
+            }
+            resetArmed = false;
+            Store.reset();
+            Sounds.setEnabled(Store.get('sounds'));
+            Sounds.setStyle(Store.get('soundStyle'));
+            tickClock();
+            loadWeather();
+            toast('Settings reset');
+          } }
       ];
     }
   };
@@ -939,8 +1043,11 @@
       var node;
       if (item.type === 'section') {
         node = el('div', 'setting-section', item.label);
+      } else if (item.type === 'note') {
+        node = el('div', 'setting-note', item.label);
       } else {
-        node = el('div', 'setting' + (item.type === 'link' ? ' setting-link' : ''));
+        node = el('div', 'setting' + (item.type === 'link' ? ' setting-link' : '') +
+          (item.type === 'choice' ? ' setting-choice' : '') + (item.danger ? ' setting-danger' : ''));
         node.style.setProperty('--i', Math.min(els.settingsList.children.length, 14));
         node.appendChild(el('span', '', item.label));
         if (item.type === 'input') {
@@ -948,18 +1055,84 @@
           input.type = item.label === 'URL' ? 'url' : 'text';
           input.value = item.value;
           input.placeholder = item.placeholder || '';
-          input.addEventListener('change', function () { item.onSave(input.value.trim()); });
+          input.disabled = !!item.disabled;
+          input.addEventListener('change', function () { if (item.onSave) item.onSave(input.value.trim()); });
+          input.addEventListener('input', function () { if (item.onInput) item.onInput(input.value); });
           node.appendChild(input);
           item.input = input;
-        } else if (item.value) {
-          node.appendChild(el('span', 'setting-value', item.value));
+        } else if (item.type === 'choice') {
+          var group = el('span', 'choice-options');
+          item.optionEls = item.options.map(function (opt) {
+            var o = el('span', 'choice-option' + (opt[0] === item.value ? ' selected' : ''), opt[1]);
+            group.appendChild(o);
+            return o;
+          });
+          node.appendChild(group);
+        } else {
+          item.valueEl = el('span', 'setting-value', item.value || '');
+          node.appendChild(item.valueEl);
         }
+        node.classList.toggle('is-disabled', !!item.disabled);
       }
       item.el = node;
       els.settingsList.appendChild(node);
     });
+    bindSettingsPointer();
+    refreshAddRow();
     if (!isSelectable(settingsIndex)) settingsIndex = nextSelectable(-1, 1);
     focusSetting();
+  }
+
+  // Pointer (desktop preview, or remotes with a pointer): clicking a row
+  // focuses and activates it; clicking a selector option picks it.
+  function bindSettingsPointer() {
+    settingsItems.forEach(function (item, i) {
+      if (!item.el || item.type === 'section' || item.type === 'note') return;
+      item.el.addEventListener('click', function (e) {
+        if (!isSelectable(i)) return;
+        settingsIndex = i;
+        focusSetting();
+        if (item.type === 'choice') {
+          var opt = item.optionEls.indexOf(e.target);
+          if (opt !== -1) selectChoice(opt);
+          return;
+        }
+        if (item.type === 'input') return item.input.focus();
+        Sounds.play('select');
+        activateSetting();
+      });
+    });
+  }
+
+  // Live-enables "Add shortcut" as the URL is typed, with a hint until valid.
+  function refreshAddRow() {
+    var add = settingsItems.filter(function (item) { return item.id === 'add-site'; })[0];
+    if (!add) return;
+    var url = webDraft.url.trim();
+    add.disabled = !validUrl(url);
+    add.el.classList.toggle('is-disabled', add.disabled);
+    add.valueEl.textContent = !url ? 'Enter a URL above' : add.disabled ? 'Not a valid address yet' : hostOf(/^https?:/.test(url) ? url : 'https://' + url);
+  }
+
+  function selectChoice(index) {
+    var item = settingsItems[settingsIndex];
+    if (!item || item.type !== 'choice' || item.disabled) return;
+    var current = item.options.map(function (o) { return o[0]; }).indexOf(item.value);
+    if (index !== current) changeChoice(index - current);
+  }
+
+  // Left/Right stop at the ends; OK wraps around.
+  function changeChoice(step, wrap) {
+    var item = settingsItems[settingsIndex];
+    if (!item || item.type !== 'choice' || item.disabled) return false;
+    var values = item.options.map(function (o) { return o[0]; });
+    var next = values.indexOf(item.value) + step;
+    if (wrap) next = (next + values.length) % values.length;
+    if (next < 0 || next >= values.length) return false;
+    item.value = values[next];
+    item.optionEls.forEach(function (o, i) { o.classList.toggle('selected', i === next); });
+    item.onChange(item.value);
+    return true;
   }
 
   function goToPage(page, back) {
@@ -971,7 +1144,8 @@
   }
 
   function isSelectable(i) {
-    return settingsItems[i] && settingsItems[i].type !== 'section';
+    var item = settingsItems[i];
+    return !!item && item.type !== 'section' && item.type !== 'note' && !item.disabled;
   }
 
   function nextSelectable(from, step) {
@@ -987,13 +1161,13 @@
     });
     // Glide the list so the focused row sits in the middle band of the panel.
     var node = settingsItems[settingsIndex] && settingsItems[settingsIndex].el;
-    if (!node) return;
     var panelH = els.settingsPanel.clientHeight;
     var listH = els.settingsList.offsetHeight;
-    var target = node.offsetTop + node.offsetHeight / 2 - panelH / 2;
+    var target = node ? node.offsetTop + node.offsetHeight / 2 - panelH / 2 : 0;
     // Short pages sit centered; long ones keep the focused row mid-panel.
     var offset = listH <= panelH ? (listH - panelH) / 2 : Math.max(0, Math.min(target, listH - panelH));
     els.settingsList.style.transform = 'translateY(' + (-offset) + 'px)';
+    renderHints();
   }
 
   function openSettings() {
@@ -1018,8 +1192,20 @@
     showNextMessage();
   }
 
+  // Moving off an armed reset cancels it.
+  function disarmReset() {
+    if (!resetArmed) return;
+    resetArmed = false;
+    var reset = settingsItems.filter(function (item) { return item.id === 'reset'; })[0];
+    if (reset) {
+      reset.el.firstChild.textContent = 'Reset everything';
+      reset.valueEl.textContent = 'Favorites, shortcuts, settings';
+    }
+  }
+
   // Back: page -> menu (focus restored), menu -> close.
   function settingsBack() {
+    disarmReset();
     if (settingsPage === 'root') return closeSettings();
     settingsIndex = rootIndex;
     goToPage('root', true);
@@ -1027,7 +1213,11 @@
 
   function activateSetting() {
     var item = settingsItems[settingsIndex];
-    if (!item) return;
+    if (!item || item.disabled) return;
+    if (item.type === 'choice') {
+      changeChoice(1, true);
+      return;
+    }
     if (item.type === 'input') {
       item.input.focus();
       return;
@@ -1212,8 +1402,22 @@
       return;
     }
 
+    if (navFocus) return handleNavKey(key);
+
     var before = rowIndex;
     switch (key) {
+      case KEY.BACK:
+        // Back first returns to the start of the dock, then asks to leave.
+        var first = firstFocusableRow(0, 1);
+        if (rowIndex !== first || row.col !== 0) {
+          rowIndex = first;
+          rows[first].col = 0;
+          updateFocus();
+          nudge('up');
+        } else {
+          showOverlay({ type: 'exit' });
+        }
+        break;
       case KEY.LEFT:
         if (row.col > 0) { row.col--; updateFocus(); nudge('left'); } else bump('left');
         break;
@@ -1223,7 +1427,13 @@
       case KEY.UP:
       case KEY.CH_UP:
         rowIndex = firstFocusableRow(rowIndex - 1, -1);
-        if (rowIndex === before) { bump('up'); break; }
+        if (rowIndex === before) {
+          // Above the dock is the top bar.
+          navFocus = true;
+          updateFocus();
+          Sounds.play('move');
+          break;
+        }
         updateFocus();
         nudge('up');
         break;
@@ -1261,17 +1471,49 @@
     }
   }
 
-  function handleSettingsKey(key) {
+  function handleNavKey(key) {
     switch (key) {
-      case KEY.UP:
-        settingsIndex = nextSelectable(settingsIndex, -1);
-        focusSetting();
+      case KEY.LEFT:
+      case KEY.RIGHT:
+        var next = navIndex + (key === KEY.LEFT ? -1 : 1);
+        if (next < 0 || next >= NAV_ITEMS.length) return Sounds.play('edge');
+        navIndex = next;
+        updateFocus();
         Sounds.play('move');
         break;
       case KEY.DOWN:
-        settingsIndex = nextSelectable(settingsIndex, 1);
+      case KEY.BACK:
+        navFocus = false;
+        updateFocus();
+        nudge('down');
+        break;
+      case KEY.UP:
+        Sounds.play('edge');
+        break;
+      case KEY.ENTER:
+        Sounds.play('select');
+        open(NAV_ITEMS[navIndex]);
+        break;
+      case KEY.GREEN:
+        openSettings();
+        break;
+    }
+  }
+
+  function handleSettingsKey(key) {
+    switch (key) {
+      case KEY.UP:
+      case KEY.DOWN:
+        var moved = nextSelectable(settingsIndex, key === KEY.UP ? -1 : 1);
+        if (moved === settingsIndex) break;
+        settingsIndex = moved;
+        disarmReset();
         focusSetting();
         Sounds.play('move');
+        break;
+      case KEY.LEFT:
+      case KEY.RIGHT:
+        if (!changeChoice(key === KEY.LEFT ? -1 : 1)) Sounds.play('edge');
         break;
       case KEY.ENTER:
         Sounds.play('select');
@@ -1313,6 +1555,13 @@
     else handleHomeKey(key);
   });
 
+  els.overlay.addEventListener('click', function (e) {
+    if (e.target === els.overlay && mode === 'overlay') closeOverlay();
+  });
+  els.settings.addEventListener('click', function (e) {
+    if (mode === 'settings' && (e.target === els.settings || e.target === els.settingsSide)) settingsBack();
+  });
+
   window.addEventListener('resize', function () {
     if (els.rendered) updateFocus();
   });
@@ -1331,6 +1580,17 @@
   /* ---------- Boot ---------- */
 
   els.settingsGlyph.innerHTML = Icons.svg('settings');
+  els.navButtons.forEach(function (btn, i) {
+    btn.querySelector('.nav-icon').innerHTML = Icons.svg(btn.querySelector('.nav-icon').getAttribute('data-icon'));
+    btn.addEventListener('click', function () {
+      if (mode !== 'home') return;
+      navFocus = true;
+      navIndex = i;
+      updateFocus();
+      Sounds.play('select');
+      open(NAV_ITEMS[i]);
+    });
+  });
   Sounds.setEnabled(Store.get('sounds'));
   Sounds.setStyle(Store.get('soundStyle'));
   Platform.registerKeys(['ColorF0Red', 'ColorF1Green', 'ColorF2Yellow', 'ColorF3Blue', 'ChannelUp', 'ChannelDown']);
