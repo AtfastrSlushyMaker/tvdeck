@@ -8,6 +8,7 @@ Selected concept: **A — blue-violet deck**.
 | `tvdeck-mark-transparent.png` | Glass symbol with transparent background, no ambient glow | 1024 × 1024 |
 | `tvdeck-mark-white.png` | Generated white symbol with transparent background | 1024 × 1024 |
 | `tvdeck-wordmark.png` | Glass symbol and white TVDeck lettering on transparent background | 2048 × 640 |
+| `tvdeck-wordmark-dark.png` | Same wordmark with near-black (#1d1d1f) lettering, for light backgrounds | 2048 × 640 |
 | `variants/tvdeck-concept-b-focused-tile.png` | Focused center tile | 1024 × 1024 |
 | `variants/tvdeck-concept-c-monogram-d.png` | Geometric D | 1024 × 1024 |
 | `variants/tvdeck-concept-d-warm-deck.png` | Warm deck | 1024 × 1024 |

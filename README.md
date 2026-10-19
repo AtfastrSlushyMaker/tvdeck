@@ -1,8 +1,9 @@
 <p align="center">
-  <img src="assets/brand/tvdeck-icon-1024.png" alt="TVDeck" width="128" height="128">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/brand/tvdeck-wordmark.png">
+    <img src="assets/brand/tvdeck-wordmark-dark.png" alt="TVDeck" width="420">
+  </picture>
 </p>
-
-<h1 align="center">TVDeck</h1>
 
 A fast, ad-free home launcher for Samsung Tizen TVs. It runs as a
 [TizenBrew](https://github.com/reisxd/TizenBrew) app module, so no Samsung
@@ -74,7 +75,8 @@ The first time it sends a remote key, the TV asks to allow "TVDeck". Accept it o
 ## Brand
 
 Source artwork lives in `assets/brand/` (not shipped to the TV): the master
-icon, transparent and white marks, the wordmark, and the unused concepts.
+icon, transparent and white marks, the wordmark (white text for dark
+backgrounds, `-dark` for light), and the unused concepts.
 `app/img/` holds the small optimized copies the launcher uses, and the
 phone page's icon is embedded in `service/service.js`.
 
