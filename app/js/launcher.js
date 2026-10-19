@@ -685,6 +685,8 @@
       if (!loaded) {
         loaded = true;
         rowIndex = firstFocusableRow(0, 1);
+        clearTimeout(loadingTimer);
+        document.body.classList.remove('loading');
         setTimeout(function () { document.body.classList.remove('booting'); }, 1800);
       }
       render();
@@ -828,7 +830,7 @@
   // Settings are a short menu of pages (like tvOS): OK opens a page,
   // Back returns to the menu, Back again closes.
   var PAGES = {
-    root: { title: 'Settings', subtitle: 'TVDeck', glyph: 'settings' },
+    root: { title: 'Settings', subtitle: 'TVDeck', glyph: 'brand' },
     general: { title: 'General', subtitle: 'Clock, weather and sound', glyph: 'settings' },
     startup: { title: 'Startup', subtitle: 'What runs when the TV starts', glyph: 'tv' },
     phone: { title: 'Phone & widgets', subtitle: 'Links, inputs, calendar, Home Assistant', glyph: 'phone' },
@@ -1033,7 +1035,10 @@
 
   function renderSettings() {
     var page = PAGES[settingsPage];
-    els.settingsGlyph.innerHTML = Icons.svg(page.glyph);
+    // The menu shows the TVDeck mark; pages show their own line icon.
+    var brand = page.glyph === 'brand';
+    els.settingsGlyph.classList.toggle('is-brand', brand);
+    els.settingsGlyph.innerHTML = brand ? '<img src="img/mark-256.png" alt="">' : Icons.svg(page.glyph);
     els.settingsTitle.textContent = page.title;
     els.settingsSubtitle.textContent = page.subtitle;
 
@@ -1601,6 +1606,11 @@
   setInterval(loadGlance, 30 * 1000);
   setInterval(rotateTicker, 6000);
   noteActivity();
+  // The loading mark only shows if the first load takes noticeably long.
+  var loadingTimer = setTimeout(function () {
+    if (!loaded) document.body.classList.add('loading');
+  }, 350);
+
   // Probe the service first so app icons can be served through it.
   Platform.service('/api/info').catch(ignore).then(function () {
     refresh(false).then(rotateTicker);

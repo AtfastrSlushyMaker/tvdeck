@@ -1,0 +1,83 @@
+[
+  {
+    "file": "tvdeck-icon-1024.png",
+    "size": [
+      1024,
+      1024
+    ],
+    "mode": "RGB",
+    "sha256": "075b79ce47fda989c5a605a5ffa3f1cf57ccf76dc14c309ee58572cd427ee1c8"
+  },
+  {
+    "file": "tvdeck-mark-transparent.png",
+    "size": [
+      1024,
+      1024
+    ],
+    "mode": "RGBA",
+    "sha256": "54f605c7bb90a67bacbcf238f6043ea5e1d661cf0aab81576c19a36250820adc",
+    "alpha_extrema": [
+      0,
+      255
+    ],
+    "fully_transparent_pixels": 787422,
+    "transparent_corners": true
+  },
+  {
+    "file": "tvdeck-mark-white.png",
+    "size": [
+      1024,
+      1024
+    ],
+    "mode": "RGBA",
+    "sha256": "73c148d78e1f8816b9bf18747f19fb92c9fec086b1b01910234aaf02d8188dac",
+    "alpha_extrema": [
+      0,
+      255
+    ],
+    "fully_transparent_pixels": 806300,
+    "transparent_corners": true
+  },
+  {
+    "file": "tvdeck-wordmark.png",
+    "size": [
+      2048,
+      640
+    ],
+    "mode": "RGBA",
+    "sha256": "2b369b39b62c10c4789838cb963c62e8ac2273f4e5dc1cef205577522f454dae",
+    "alpha_extrema": [
+      0,
+      255
+    ],
+    "fully_transparent_pixels": 936626,
+    "transparent_corners": true
+  },
+  {
+    "file": "variants/tvdeck-concept-b-focused-tile.png",
+    "size": [
+      1024,
+      1024
+    ],
+    "mode": "RGB",
+    "sha256": "d977c3d35b622668a3f0bf420a0229b860c0a887760b00f74954aa40df51610e"
+  },
+  {
+    "file": "variants/tvdeck-concept-c-monogram-d.png",
+    "size": [
+      1024,
+      1024
+    ],
+    "mode": "RGB",
+    "sha256": "24e2ec4a0f7454e90bc888e8d7cae8cefde301043f8f860439a4e832a31e43a9"
+  },
+  {
+    "file": "variants/tvdeck-concept-d-warm-deck.png",
+    "size": [
+      1024,
+      1024
+    ],
+    "mode": "RGB",
+    "sha256": "a603a40497e535a0c102374c1ec9024c0db4e90194ae49a8dff4511e041b69ea"
+  }
+]

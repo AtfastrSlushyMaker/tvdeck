@@ -145,7 +145,14 @@ body.scrolled .shelf-status .ticker {
 }
 
 /* Quick access, reached with Up from the dock */
-.nav { display: flex; }
+.nav { display: flex; align-items: center; }
+
+/* Brand mark: decorative, not focusable, sized to the buttons */
+.nav-brand {
+  width: 2.3vw;
+  height: 2.3vw;
+  margin-right: 1.1vw;
+}
 
 .nav-btn {
   display: flex;
@@ -694,6 +701,15 @@ body.sheet-on .viewport {
 
 .settings-glyph svg { width: 100%; height: 100%; }
 
+/* Settings menu: the TVDeck mark sits on its own, no tile behind it */
+.settings-glyph.is-brand {
+  padding: 0.6vw;
+  background: none;
+  box-shadow: none;
+}
+
+.settings-glyph img { display: block; width: 100%; height: 100%; }
+
 .settings-side h2 {
   margin: 1.5vw 0 0.3vw;
   font-size: 1.8vw;
@@ -1118,3 +1134,39 @@ body.sheet-on .topbar { opacity: 0.22; }
   transform: scale(1.06);
   box-shadow: 0 0.6vw 1.4vw rgba(0, 0, 0, 0.3);
 }
+
+/* Loading mark: only appears if the first load is slow (see launcher.js).
+   It breathes while loading, then fades as the home screen comes in. */
+.splash {
+  position: fixed;
+  z-index: 5;
+  top: 50%;
+  left: 50%;
+  width: 9vw;
+  height: 9vw;
+  margin: -4.5vw 0 0 -4.5vw;
+  opacity: 0;
+  transform: scale(0.94);
+  pointer-events: none;
+  transition: opacity 450ms var(--ease-in), transform 500ms var(--ease-in);
+}
+
+.splash img { display: block; width: 100%; height: 100%; }
+
+body.loading .splash {
+  opacity: 1;
+  transform: none;
+  transition: opacity 600ms var(--ease), transform 700ms var(--ease);
+}
+
+body.loading .splash img { animation: breathe 2.4s var(--sine) infinite alternate; }
+
+@keyframes breathe {
+  from { transform: scale(1); opacity: 1; }
+  to { transform: scale(1.035); opacity: 0.85; }
+}
+
+/* While loading, the launcher stays out of view behind the mark */
+body.loading .viewport,
+body.loading .topbar,
+body.loading .hints { opacity: 0; }

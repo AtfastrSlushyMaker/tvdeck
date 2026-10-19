@@ -4,6 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=1920, initial-scale=1">
   <title>TVDeck</title>
+  <link rel="icon" href="img/favicon-64.png">
   <link rel="stylesheet" href="style.css">
 </head>
 <body class="booting">
@@ -14,9 +15,13 @@
     <div class="backdrop-shade"></div>
   </div>
 
+  <!-- Loading mark: shown only when the first load is slow. -->
+  <div class="splash" aria-hidden="true"><img src="img/mark-256.png" alt=""></div>
+
   <!-- Fixed top bar: quick access on the left, time and status on the right. -->
   <header class="topbar">
     <nav class="nav" id="nav">
+      <img class="nav-brand" src="img/mark-256.png" alt="TVDeck">
       <div class="nav-btn" data-nav="settings"><span class="nav-icon" data-icon="settings"></span><span>Settings</span></div>
       <div class="nav-btn" data-nav="phone"><span class="nav-icon" data-icon="phone"></span><span>Send from phone</span></div>
     </nav>
