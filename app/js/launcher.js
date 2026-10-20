@@ -158,7 +158,12 @@
   }
 
   // One row per category, or a single "Apps" row when grouping is off.
+  // If the TV's app list couldn't load, say how to get it rather than hide it.
   function appRows(items, hidden) {
+    if (!data.apps.length && Platform.appsError()) {
+      return [{ id: 'apps', title: 'Apps', apps: true, items: [],
+        empty: 'Your apps appear once the TVDeck service is running. Reopen TVDeck from TizenBrew to start it.' }];
+    }
     var visible = data.apps.filter(function (app) { return hidden.indexOf(app.id) === -1; });
     function toItems(apps) {
       return apps.map(function (app) { return items['app:' + app.id]; });
@@ -587,7 +592,8 @@
         Platform.launchModule(item.ref);
         break;
       case 'web':
-        Platform.openUrl(item.ref.url);
+        // TVDeck's page has no address bar or back button: use the TV browser.
+        Platform.openInBrowser(item.ref.url).catch(function () { toast('Could not open ' + item.name); });
         break;
       case 'key':
         Platform.sendKey(item.ref.key)
@@ -758,8 +764,8 @@
       next.buttons = [
         { label: 'Stay', action: function () {} },
         { label: 'Exit', action: function () {
-          if (Platform.isTV) Platform.exit();
-          else toast('On the TV this returns to the Samsung home screen');
+          if (!Platform.isTV) return toast('On the TV this returns to the Samsung home screen');
+          Platform.exit().catch(function () { toast('Press the Home button to leave'); });
         } }
       ];
     } else {
@@ -767,7 +773,9 @@
       card.appendChild(el('h2', '', item.type === 'url' ? 'Link from your phone' : 'Message from your phone'));
       card.appendChild(el('p', item.type === 'url' ? 'message-url' : 'message-text', item.value));
       next.buttons = item.type === 'url' ? [
-        { label: 'Open in browser', action: function () { Platform.openInBrowser(item.value); } },
+        { label: 'Open in browser', action: function () {
+          Platform.openInBrowser(item.value).catch(function () { toast('Could not open the link'); });
+        } },
         { label: 'Open here', action: function () { Platform.openUrl(item.value); } },
         { label: 'Dismiss', action: function () {} }
       ] : [{ label: 'Dismiss', action: function () {} }];

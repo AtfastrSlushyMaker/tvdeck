@@ -1,14 +1,20 @@
 /*
- * Platform layer: talks to the Tizen web APIs and the TizenBrew service.
+ * Platform layer: talks to the TV through the TVDeck service and TizenBrew.
  * Falls back to mock data when opened in a desktop browser, so the UI can be
  * developed without a TV.
  *
- * Tizen 6 ships an old Chromium: no optional chaining, no `??`.
+ * TizenBrew serves modules over http, and the TV does not expose the `tizen`
+ * API to such pages. So on the TV, app listing, launching, links and exit go
+ * through the TVDeck service (service/service.js), which does have `tizen`.
+ * Direct `tizen` calls are kept for when it is present.
+ *
+ * Keep to ES5 (older Tizen engines): no optional chaining, no `??`.
  */
 var Platform = (function () {
   'use strict';
 
-  var IS_TV = typeof tizen !== 'undefined' && !!tizen.application;
+  var HAS_TIZEN = typeof tizen !== 'undefined' && !!tizen.application;
+  var IS_TV = HAS_TIZEN || /Tizen|SMART-TV/i.test(navigator.userAgent);
   var SELF_PACKAGE = 'tvdeck';
   var TB_SOCKET = 'ws://localhost:8081';
   var TB_EVENTS = { GetModules: 4, LaunchModule: 5, ModuleAction: 10 };
@@ -63,18 +69,31 @@ var Platform = (function () {
     return false;
   }
 
+  var appsError = null;   // why the app list is empty on the TV, if it is
+
+  function tidyApps(infos) {
+    return infos
+      .filter(function (info) { return info.name && !isHiddenApp(info); })
+      .map(function (info) {
+        return { id: info.id, name: info.name, icon: info.iconPath || info.icon || '', categories: info.categories || [] };
+      })
+      .sort(function (a, b) { return a.name.localeCompare(b.name); });
+  }
+
   function listApps() {
     if (!IS_TV) return Promise.resolve(MOCK_APPS.slice());
-    return new Promise(function (resolve) {
-      tizen.application.getAppsInfo(function (infos) {
-        var apps = infos
-          .filter(function (info) { return info.name && !isHiddenApp(info); })
-          .map(function (info) {
-            return { id: info.id, name: info.name, icon: info.iconPath || '', categories: info.categories || [] };
-          })
-          .sort(function (a, b) { return a.name.localeCompare(b.name); });
-        resolve(apps);
-      }, function () { resolve([]); });
+    if (HAS_TIZEN) {
+      return new Promise(function (resolve) {
+        tizen.application.getAppsInfo(function (infos) { appsError = null; resolve(tidyApps(infos)); },
+          function () { resolve([]); });
+      });
+    }
+    return service('/api/apps').then(function (res) {
+      appsError = null;
+      return tidyApps(res.apps);
+    }, function () {
+      appsError = 'service';
+      return [];
     });
   }
 
@@ -83,9 +102,12 @@ var Platform = (function () {
       console.log('[mock] launch app', id);
       return Promise.resolve();
     }
-    return new Promise(function (resolve, reject) {
-      tizen.application.launch(id, resolve, reject);
-    });
+    if (HAS_TIZEN) {
+      return new Promise(function (resolve, reject) {
+        tizen.application.launch(id, resolve, reject);
+      });
+    }
+    return service('/api/launch', { id: id });
   }
 
   // TizenBrew's service answers GetModules with null until it has fetched
@@ -133,9 +155,7 @@ var Platform = (function () {
       console.log('[mock] launch module', mod.fullName);
       return;
     }
-    (mod.keys || []).forEach(function (key) {
-      try { tizen.tvinputdevice.registerKey(key); } catch (e) { /* unsupported key */ }
-    });
+    registerKeys(mod.keys || []);
     var socket = new WebSocket(TB_SOCKET);
     socket.onopen = function () {
       socket.send(JSON.stringify({ type: TB_EVENTS.LaunchModule, payload: mod }));
@@ -147,18 +167,19 @@ var Platform = (function () {
     location.href = url;
   }
 
-  // Opens a URL in the TV's own browser app, falling back to this page.
+  // Opens a URL in the TV's own browser app.
   function openInBrowser(url) {
-    if (!IS_TV || !tizen.application.launchAppControl) {
+    if (!IS_TV) {
       window.open(url, '_blank');
-      return;
+      return Promise.resolve();
     }
-    try {
-      var control = new tizen.ApplicationControl('http://tizen.org/appcontrol/operation/view', url);
-      tizen.application.launchAppControl(control, 'org.tizen.browser', null, function () { openUrl(url); });
-    } catch (e) {
-      openUrl(url);
+    if (HAS_TIZEN) {
+      return new Promise(function (resolve, reject) {
+        var control = new tizen.ApplicationControl('http://tizen.org/appcontrol/operation/view', url);
+        tizen.application.launchAppControl(control, 'org.tizen.browser', resolve, reject);
+      });
     }
+    return service('/api/open', { url: url });
   }
 
   /* ---------- TVDeck service (service/service.js) ---------- */
@@ -232,19 +253,27 @@ var Platform = (function () {
     return self.slice(self.indexOf('/') + 1);
   }
 
+  // Only possible with the tizen API. TizenBrew registers the keys listed in
+  // package.json before it opens the module, so the page still gets them.
   function registerKeys(keys) {
-    if (!IS_TV || !tizen.tvinputdevice) return;
+    if (!HAS_TIZEN || !tizen.tvinputdevice) return;
     keys.forEach(function (key) {
       try { tizen.tvinputdevice.registerKey(key); } catch (e) { /* unsupported key */ }
     });
   }
 
+  // Leaves for the Samsung home screen.
   function exit() {
-    if (IS_TV) tizen.application.getCurrentApplication().hide();
+    if (HAS_TIZEN) {
+      tizen.application.getCurrentApplication().hide();
+      return Promise.resolve();
+    }
+    return IS_TV ? service('/api/exit', {}) : Promise.resolve();
   }
 
   return {
     isTV: IS_TV,
+    appsError: function () { return appsError; },
     listApps: listApps,
     launchApp: launchApp,
     listModules: listModules,

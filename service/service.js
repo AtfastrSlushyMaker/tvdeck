@@ -1,9 +1,12 @@
 /*
  * TVDeck background service.
  *
- * TizenBrew runs this file with Node.js inside a vm sandbox on the TV, with
- * TizenBrew's own `require` (express, node-fetch, ws-new/ws-old available).
- * The TV's Node can be old (v4 on Tizen 3), so this file is plain ES5.
+ * TizenBrew runs this file with Node.js inside a vm sandbox on the TV. Its
+ * runtime is bundled, so only Node built-ins can be required (no node-fetch,
+ * no ws): this file brings its own small HTTP and WebSocket clients. The
+ * sandbox also exposes `tizen`, which the launcher page itself does not get,
+ * so app listing, launching, links and exit go through here. The TV's Node
+ * can be old (v4 on Tizen 3), so this file is plain ES5.
  *
  * It can also run on a computer for development:
  *   TV_HOST=192.168.1.10 node service/service.js
@@ -24,13 +27,24 @@
  *     GET  /api/ha/states        configured Home Assistant entities
  *     POST /api/ha/action        { entity_id }
  *     GET  /api/tizenbrew        TizenBrew auto-launch config
+ *     GET  /api/apps             installed apps (via tizen.application)
+ *     POST /api/launch           { id } launch an app
+ *     POST /api/open             { url } open a link in the TV browser
+ *     POST /api/exit             leave to the Samsung home screen
+ *     GET  /api/status           runtime info for troubleshooting
  */
 (function () {
   'use strict';
 
   var http = require('http');
+  var https = require('https');
+  var tls = require('tls');
+  var crypto = require('crypto');
+  var urlLib = require('url');
   var fs = require('fs');
   var pathLib = require('path');
+
+  var HAS_TIZEN = typeof tizen !== 'undefined' && !!tizen.application;
 
   var PORT = 8085;
   var TV_HOST = (typeof process !== 'undefined' && process.env && process.env.TV_HOST) || '127.0.0.1';
@@ -42,8 +56,14 @@
   var ICON_TYPES = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.svg': 'image/svg+xml' };
   var MAX_BODY = 64 * 1024;
 
-  var fetchFn = typeof fetch === 'function' ? fetch : require('node-fetch');
-  var WebSocket = loadWebSocket();
+  // Old Node lacks Buffer.from/alloc.
+  function bufFrom(data, encoding) {
+    return Buffer.from ? Buffer.from(data, encoding) : new Buffer(data, encoding);
+  }
+
+  function bufAlloc(size) {
+    return Buffer.alloc ? Buffer.alloc(size) : new Buffer(size).fill(0);
+  }
 
   var pin = String(1000 + Math.floor(Math.random() * 9000));
   var pinFailures = { count: 0, lockedUntil: 0 };
@@ -100,6 +120,57 @@
     }).filter(Boolean);
   }
 
+  /* ---------- HTTP client (built-ins only) ---------- */
+
+  // Minimal fetch: follows redirects, resolves { ok, status, text(), json() }.
+  // Certificates are only relaxed for the TV itself (self-signed on :8002).
+  function fetchFn(url, options, redirects) {
+    options = options || {};
+    redirects = redirects || 0;
+    return new Promise(function (resolve, reject) {
+      var parsed = urlLib.parse(url);
+      var lib = parsed.protocol === 'https:' ? https : http;
+      var req = lib.request({
+        hostname: parsed.hostname,
+        port: parsed.port,
+        path: parsed.path,
+        method: options.method || 'GET',
+        headers: options.headers || {},
+        rejectUnauthorized: parsed.hostname !== '127.0.0.1' && parsed.hostname !== TV_HOST
+      }, function (res) {
+        if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location && redirects < 5) {
+          res.resume();
+          var next = urlLib.resolve(url, res.headers.location);
+          var keep = res.statusCode === 307 || res.statusCode === 308;
+          resolve(fetchFn(next, keep ? options : { headers: options.headers }, redirects + 1));
+          return;
+        }
+        var chunks = [];
+        res.on('data', function (chunk) { chunks.push(chunk); });
+        res.on('end', function () {
+          var body = Buffer.concat(chunks).toString('utf8');
+          resolve({
+            ok: res.statusCode >= 200 && res.statusCode < 300,
+            status: res.statusCode,
+            text: function () { return Promise.resolve(body); },
+            json: function () {
+              return new Promise(function (ok, fail) {
+                try { ok(JSON.parse(body)); } catch (e) { fail(e); }
+              });
+            }
+          });
+        });
+      });
+      req.on('error', reject);
+      req.setTimeout(15000, function () {
+        req.abort();
+        reject(new Error('Request timed out'));
+      });
+      if (options.body) req.write(options.body);
+      req.end();
+    });
+  }
+
   /* ---------- Device IP ---------- */
 
   function localInterfaceIP() {
@@ -122,45 +193,119 @@
 
   /* ---------- TV remote keys (wss://:8002) ---------- */
 
-  function loadWebSocket() {
-    var names = ['ws-new', 'ws-old', 'ws'];
-    for (var i = 0; i < names.length; i++) {
-      try { return require(names[i]); } catch (e) { /* try next */ }
+  // Minimal RFC 6455 client over TLS, enough for the TV's remote channel:
+  // text frames, close, ping/pong. handlers: open, message(text), close.
+  function wsConnect(url, handlers) {
+    var parsed = urlLib.parse(url);
+    var key = crypto.randomBytes(16).toString('base64');
+    var buffer = bufAlloc(0);
+    var upgraded = false;
+    var socket = tls.connect({ host: parsed.hostname, port: +parsed.port || 443, rejectUnauthorized: false }, function () {
+      socket.write('GET ' + parsed.path + ' HTTP/1.1\r\n' +
+        'Host: ' + parsed.host + '\r\n' +
+        'Upgrade: websocket\r\nConnection: Upgrade\r\n' +
+        'Sec-WebSocket-Key: ' + key + '\r\nSec-WebSocket-Version: 13\r\n\r\n');
+    });
+
+    function frame(payload, opcode) {
+      var len = payload.length;
+      var header;
+      if (len < 126) {
+        header = bufAlloc(2);
+        header[1] = 0x80 | len;
+      } else if (len < 65536) {
+        header = bufAlloc(4);
+        header[1] = 0x80 | 126;
+        header.writeUInt16BE(len, 2);
+      } else {
+        header = bufAlloc(10);
+        header[1] = 0x80 | 127;
+        header.writeUInt32BE(len, 6);
+      }
+      header[0] = 0x80 | opcode;
+      var mask = crypto.randomBytes(4);
+      var body = bufAlloc(len);
+      for (var i = 0; i < len; i++) body[i] = payload[i] ^ mask[i % 4];
+      socket.write(Buffer.concat([header, mask, body]));
     }
-    return null;
+
+    function readFrames() {
+      while (buffer.length >= 2) {
+        var len = buffer[1] & 127;
+        var offset = 2;
+        if (len === 126) {
+          if (buffer.length < 4) return;
+          len = buffer.readUInt16BE(2);
+          offset = 4;
+        } else if (len === 127) {
+          if (buffer.length < 10) return;
+          len = buffer.readUInt32BE(6);
+          offset = 10;
+        }
+        if (buffer[1] & 128) offset += 4; // servers don't mask, but be safe
+        if (buffer.length < offset + len) return;
+        var opcode = buffer[0] & 15;
+        var payload = buffer.slice(offset, offset + len);
+        buffer = buffer.slice(offset + len);
+        if (opcode === 1 && handlers.message) handlers.message(payload.toString('utf8'));
+        else if (opcode === 8) socket.end();
+        else if (opcode === 9) frame(payload, 10);
+      }
+    }
+
+    socket.on('data', function (chunk) {
+      buffer = Buffer.concat([buffer, chunk]);
+      if (!upgraded) {
+        var end = buffer.toString('binary').indexOf('\r\n\r\n');
+        if (end === -1) return;
+        if (!/^HTTP\/1\.1 101/.test(buffer.slice(0, end).toString())) return socket.destroy();
+        upgraded = true;
+        buffer = buffer.slice(end + 4);
+        if (handlers.open) handlers.open();
+      }
+      readFrames();
+    });
+    socket.on('close', function () { if (handlers.close) handlers.close(); });
+    socket.on('error', function () { /* close follows */ });
+
+    return {
+      send: function (text) { frame(bufFrom(String(text), 'utf8'), 1); },
+      close: function () { socket.end(); }
+    };
   }
 
   var remote = { socket: null, ready: false, queue: [] };
 
   function remoteUrl() {
-    var name = (Buffer.from ? Buffer.from('TVDeck') : new Buffer('TVDeck')).toString('base64');
+    var name = bufFrom('TVDeck').toString('base64');
     var url = 'wss://' + TV_HOST + ':8002/api/v2/channels/samsung.remote.control?name=' + name;
     return config.remoteToken ? url + '&token=' + config.remoteToken : url;
   }
 
+  // Connects lazily (on the first key), so the TV's "Allow TVDeck?" prompt
+  // only appears when the user actually uses an input or Exit.
   function connectRemote() {
-    if (!WebSocket || remote.socket) return;
-    var socket = new WebSocket(remoteUrl(), { rejectUnauthorized: false });
-    remote.socket = socket;
-    socket.on('message', function (raw) {
-      var msg;
-      try { msg = JSON.parse(raw.toString()); } catch (e) { return; }
-      if (msg.event === 'ms.channel.connect') {
-        if (msg.data && msg.data.token && msg.data.token !== config.remoteToken) {
-          config.remoteToken = String(msg.data.token);
-          writeConfig();
+    if (remote.socket) return;
+    remote.socket = wsConnect(remoteUrl(), {
+      message: function (raw) {
+        var msg;
+        try { msg = JSON.parse(raw); } catch (e) { return; }
+        if (msg.event === 'ms.channel.connect') {
+          if (msg.data && msg.data.token && String(msg.data.token) !== config.remoteToken) {
+            config.remoteToken = String(msg.data.token);
+            writeConfig();
+          }
+          remote.ready = true;
+          flushKeys();
+        } else if (msg.event === 'ms.channel.unauthorized') {
+          remote.socket.close();
         }
-        remote.ready = true;
-        flushKeys();
-      } else if (msg.event === 'ms.channel.unauthorized') {
-        socket.close();
+      },
+      close: function () {
+        remote.socket = null;
+        remote.ready = false;
       }
     });
-    socket.on('close', function () {
-      remote.socket = null;
-      remote.ready = false;
-    });
-    socket.on('error', function () { /* close follows */ });
   }
 
   function flushKeys() {
@@ -340,6 +485,43 @@
     return haRequest('/api/services/' + service, { entity_id: entityId });
   }
 
+  /* ---------- TV apps (tizen API, available to the service only) ---------- */
+
+  function listApps() {
+    if (!HAS_TIZEN) return Promise.reject(new Error('Tizen API unavailable'));
+    return new Promise(function (resolve, reject) {
+      tizen.application.getAppsInfo(function (infos) {
+        resolve(infos.map(function (info) {
+          return {
+            id: info.id,
+            name: info.name,
+            icon: info.iconPath || '',
+            categories: info.categories || [],
+            show: info.show !== false
+          };
+        }));
+      }, reject);
+    });
+  }
+
+  function launchApp(id) {
+    if (!HAS_TIZEN) return Promise.reject(new Error('Tizen API unavailable'));
+    return new Promise(function (resolve, reject) {
+      tizen.application.launch(id, resolve, reject);
+    });
+  }
+
+  function openUrl(url) {
+    if (!HAS_TIZEN) return Promise.reject(new Error('Tizen API unavailable'));
+    return new Promise(function (resolve, reject) {
+      var control = new tizen.ApplicationControl('http://tizen.org/appcontrol/operation/view', url);
+      tizen.application.launchAppControl(control, 'org.tizen.browser', resolve, function () {
+        // Fall back to whichever app handles web links.
+        tizen.application.launchAppControl(control, null, resolve, reject);
+      });
+    });
+  }
+
   /* ---------- TizenBrew config ---------- */
 
   function tizenbrewConfig() {
@@ -498,6 +680,33 @@
       }).catch(fail(res));
     }
     if (route === 'GET /api/tizenbrew') return send(res, 200, tizenbrewConfig());
+    if (route === 'GET /api/status') {
+      return send(res, 200, {
+        node: typeof process !== 'undefined' ? process.version : null,
+        tizen: HAS_TIZEN,
+        remote: remote.ready,
+        ip: deviceIP
+      });
+    }
+    if (route === 'GET /api/apps') {
+      return listApps().then(function (apps) { send(res, 200, { apps: apps }); }).catch(fail(res));
+    }
+    if (route === 'POST /api/launch') {
+      return readBody(req).then(function (body) {
+        return launchApp(String(body.id || '')).then(function () { send(res, 200, { ok: true }); });
+      }).catch(fail(res));
+    }
+    if (route === 'POST /api/open') {
+      return readBody(req).then(function (body) {
+        if (!/^https?:\/\//.test(body.url || '')) return send(res, 400, { error: 'Bad URL' });
+        return openUrl(body.url).then(function () { send(res, 200, { ok: true }); });
+      }).catch(fail(res));
+    }
+    if (route === 'POST /api/exit') {
+      // Pressing Home leaves TizenBrew (and TVDeck) for the Samsung home screen.
+      sendKey('KEY_HOME');
+      return send(res, 200, { ok: true });
+    }
 
     send(res, 404, { error: 'Not found' });
   }
@@ -559,7 +768,6 @@
   /* ---------- Start ---------- */
 
   loadDeviceIP();
-  if (ON_TV) connectRemote();
   http.createServer(function (req, res) {
     try { handle(req, res); } catch (e) { send(res, 500, { error: e.message }); }
   }).listen(PORT, '0.0.0.0', function () {

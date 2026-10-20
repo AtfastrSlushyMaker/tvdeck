@@ -45,7 +45,8 @@ var Sounds = (function () {
 
   // Target peak per tap. calibrate() measures each tap offline and stores
   // tap.norm so every tap plays at these levels, whatever its filters do.
-  var LEVEL = { move: 0.12, select: 0.17, edge: 0.14, back: 0.13 };
+  // TV speakers need more level than headphones; peaks stay well under 1.
+  var LEVEL = { move: 0.28, select: 0.3, edge: 0.24, back: 0.26 };
 
   var ctx = null;
   var master = null;
