@@ -676,16 +676,23 @@
 
   function refresh(announce) {
     lastRefresh = Date.now();
+    // TizenBrew can take seconds to list modules; don't hold the home
+    // screen for it. That row fills in when the list arrives.
+    Platform.listModules().then(function (modules) {
+      data.modules = modules;
+      if (loaded && mode === 'home') {
+        buildRows();
+        render();
+      }
+    });
     return Promise.all([
       Platform.listApps(),
-      Platform.listModules(),
       loadInputs(),
       Platform.service('/api/tizenbrew').catch(ignore)
     ]).then(function (results) {
       data.apps = results[0];
-      data.modules = results[1];
-      data.inputs = results[2];
-      data.tizenbrew = results[3];
+      data.inputs = results[1];
+      data.tizenbrew = results[2];
       rowsDirty = false;
       buildRows();
       if (!loaded) {
