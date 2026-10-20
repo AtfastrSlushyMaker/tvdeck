@@ -674,6 +674,27 @@
     });
   }
 
+  function markLoaded() {
+    if (loaded) return;
+    loaded = true;
+    rowIndex = firstFocusableRow(0, 1);
+    clearTimeout(loadingTimer);
+    document.body.classList.remove('loading');
+    setTimeout(function () { document.body.classList.remove('booting'); }, 1800);
+  }
+
+  // Draw the home screen straight away from the last known apps; refresh()
+  // replaces them a moment later.
+  function paintFromCache() {
+    var cache = Store.get('appsCache');
+    if (!Platform.isTV || !cache || !cache.apps || !cache.apps.length) return;
+    data.apps = cache.apps;
+    data.inputs = cache.inputs || [];
+    buildRows();
+    markLoaded();
+    render();
+  }
+
   function refresh(announce) {
     lastRefresh = Date.now();
     // TizenBrew can take seconds to list modules; don't hold the home
@@ -693,15 +714,10 @@
       data.apps = results[0];
       data.inputs = results[1];
       data.tizenbrew = results[2];
+      if (data.apps.length) Store.set('appsCache', { apps: data.apps, inputs: data.inputs });
       rowsDirty = false;
       buildRows();
-      if (!loaded) {
-        loaded = true;
-        rowIndex = firstFocusableRow(0, 1);
-        clearTimeout(loadingTimer);
-        document.body.classList.remove('loading');
-        setTimeout(function () { document.body.classList.remove('booting'); }, 1800);
-      }
+      markLoaded();
       render();
       loadGlance();
       if (announce) toast('Refreshed');
@@ -1626,6 +1642,7 @@
     if (!loaded) document.body.classList.add('loading');
   }, 350);
 
+  paintFromCache();
   // Probe the service first so app icons can be served through it.
   Platform.service('/api/info').catch(ignore).then(function () {
     refresh(false).then(rotateTicker);

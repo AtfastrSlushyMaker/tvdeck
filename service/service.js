@@ -487,7 +487,38 @@
 
   /* ---------- TV apps (tizen API, available to the service only) ---------- */
 
+  // getAppsInfo takes ~5 s on a TV (it returns ~370 entries), so the list is
+  // cached in memory and on disk, served instantly, and refreshed behind.
+  var APPS_FILE = fs.existsSync(SHARE_DIR) ? SHARE_DIR + '/tvdeck-apps.json' : pathLib.resolve('.tvdeck-apps.json');
+  var appsCache = { at: 0, apps: null, pending: null };
+  var APPS_MAX_AGE = 60 * 1000;
+
+  try {
+    appsCache.apps = JSON.parse(fs.readFileSync(APPS_FILE, 'utf8'));
+  } catch (e) { /* first run */ }
+
+  function refreshApps() {
+    if (appsCache.pending) return appsCache.pending;
+    appsCache.pending = fetchApps().then(function (apps) {
+      appsCache = { at: Date.now(), apps: apps, pending: null };
+      try { fs.writeFileSync(APPS_FILE, JSON.stringify(apps)); } catch (e) { /* read-only */ }
+      return apps;
+    }, function (err) {
+      appsCache.pending = null;
+      throw err;
+    });
+    return appsCache.pending;
+  }
+
   function listApps() {
+    if (appsCache.apps) {
+      if (Date.now() - appsCache.at > APPS_MAX_AGE) refreshApps().catch(function () {});
+      return Promise.resolve(appsCache.apps);
+    }
+    return refreshApps();
+  }
+
+  function fetchApps() {
     if (!HAS_TIZEN) return Promise.reject(new Error('Tizen API unavailable'));
     return new Promise(function (resolve, reject) {
       tizen.application.getAppsInfo(function (infos) {
@@ -768,6 +799,7 @@
   /* ---------- Start ---------- */
 
   loadDeviceIP();
+  if (HAS_TIZEN) refreshApps().catch(function () {}); // warm the app cache
   http.createServer(function (req, res) {
     try { handle(req, res); } catch (e) { send(res, 500, { error: e.message }); }
   }).listen(PORT, '0.0.0.0', function () {

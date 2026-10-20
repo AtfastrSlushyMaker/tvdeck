@@ -219,7 +219,8 @@ var Platform = (function () {
   function iconUrl(path) {
     if (!path) return '';
     if (path.indexOf('/') !== 0) return path;
-    return serviceUp ? SERVICE + '/api/icon?path=' + encodeURIComponent(path) : 'file://' + path;
+    // On the TV, icons can only be read by the service (file:// is blocked).
+    return IS_TV || serviceUp ? SERVICE + '/api/icon?path=' + encodeURIComponent(path) : 'file://' + path;
   }
 
   /* ---------- TizenBrew auto-launch ---------- */

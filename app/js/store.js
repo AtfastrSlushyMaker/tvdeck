@@ -13,6 +13,7 @@ var Store = (function () {
     hiddenApps: [],         // app ids
     recent: [],             // item keys, most recent first
     openedAt: {},           // item key -> last opened (ms), for the shelf
+    appsCache: null,        // last app list, so the home screen draws instantly
     sounds: true,           // synthesized UI sounds
     soundStyle: 'soft',     // soft | glass | wood
     showRecent: true,
