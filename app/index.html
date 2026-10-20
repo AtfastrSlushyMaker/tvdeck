@@ -5,7 +5,32 @@
   <meta name="viewport" content="width=1920, initial-scale=1">
   <title>TVDeck</title>
   <link rel="icon" href="img/favicon-64.png">
-  <link rel="stylesheet" href="style.css">
+  <script>
+    // Installed from GitHub (gh/user/repo), TizenBrew loads files through
+    // jsDelivr, which can serve the branch's files for hours after a push.
+    // So code loads from the exact commit seen last time (immutable URLs),
+    // and a newer commit is looked up in the background for the next launch.
+    (function () {
+      var KEY = 'tvdeck:build';
+      var gh = /\/module\/gh%2F([^/%]+)%2F([^/%@]+)\//.exec(location.pathname);
+      var base = '';
+      try {
+        var build = localStorage.getItem(KEY);
+        if (gh && build) base = 'https://cdn.jsdelivr.net/gh/' + gh[1] + '/' + gh[2] + '@' + build + '/app/';
+      } catch (e) { /* storage unavailable: use the proxied files */ }
+      window.TVDECK_BASE = base;
+      document.write('<link rel="stylesheet" href="' + base + 'style.css">');
+      if (!gh || !window.fetch) return;
+      fetch('https://api.github.com/repos/' + gh[1] + '/' + gh[2] + '/commits/main',
+        { headers: { Accept: 'application/vnd.github.sha' } })
+        .then(function (res) { return res.ok ? res.text() : ''; })
+        .then(function (sha) {
+          sha = sha.trim();
+          if (/^[0-9a-f]{40}$/.test(sha)) localStorage.setItem(KEY, sha.slice(0, 12));
+        })
+        .catch(function () { /* offline: keep the current build */ });
+    })();
+  </script>
 </head>
 <body class="booting">
   <!-- Color wash taken from the focused tile's icon; two layers cross-fade. -->
@@ -78,13 +103,11 @@
     <div id="overlay-card" class="overlay-card"></div>
   </section>
 
-  <script src="vendor/qrcode.js"></script>
-  <script src="js/platform.js"></script>
-  <script src="js/store.js"></script>
-  <script src="js/weather.js"></script>
-  <script src="js/icons.js"></script>
-  <script src="js/categories.js"></script>
-  <script src="js/sounds.js"></script>
-  <script src="js/launcher.js"></script>
+  <script>
+    ['vendor/qrcode.js', 'js/platform.js', 'js/store.js', 'js/weather.js', 'js/icons.js',
+      'js/categories.js', 'js/sounds.js', 'js/launcher.js'].forEach(function (src) {
+      document.write('<script src="' + window.TVDECK_BASE + src + '"><\/script>');
+    });
+  </script>
 </body>
 </html>
