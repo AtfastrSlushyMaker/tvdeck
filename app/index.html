@@ -12,7 +12,9 @@
     // and a newer commit is looked up in the background for the next launch.
     (function () {
       var KEY = 'tvdeck:build';
-      var gh = /\/module\/gh%2F([^/%]+)%2F([^/%@]+)\//.exec(location.pathname);
+      // gh/user/repo, optionally pinned (@ref): after one launch, the newest
+      // commit is always used.
+      var gh = /\/module\/gh%2F([^/%]+)%2F([^/%@]+)(?:%40[^/]*)?\//.exec(location.pathname);
       var base = '';
       try {
         var build = localStorage.getItem(KEY);

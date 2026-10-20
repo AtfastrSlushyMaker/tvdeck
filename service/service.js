@@ -33,7 +33,7 @@
  *     POST /api/exit             leave to the Samsung home screen
  *     GET  /api/status           runtime info for troubleshooting
  */
-(function () {
+function tvdeckService() {
   'use strict';
 
   var http = require('http');
@@ -805,4 +805,57 @@
   }).listen(PORT, '0.0.0.0', function () {
     console.log('[tvdeck] service listening on :' + PORT + ' (PIN ' + pin + ')');
   });
+}
+
+/*
+ * Self-update. TizenBrew fetches this file through jsDelivr, whose cached
+ * branch can trail GitHub by hours. So on start, look up the newest commit,
+ * fetch this file from that exact commit (an immutable URL) and run it in
+ * place of this copy. If anything fails, run this copy. Skipped in
+ * development (TV_HOST set) and inside the fetched copy itself.
+ */
+(function () {
+  var REPO = 'AtfastrSlushyMaker/tvdeck';
+  var dev = typeof process !== 'undefined' && process.env && process.env.TV_HOST;
+  if (dev || typeof TVDECK_SERVICE_FRESH !== 'undefined') return tvdeckService();
+
+  var https = require('https');
+  var started = false;
+  function runLocal() {
+    if (started) return;
+    started = true;
+    tvdeckService();
+  }
+  function get(url, headers) {
+    return new Promise(function (resolve, reject) {
+      var req = https.get(url, { headers: headers || {} }, function (res) {
+        var chunks = [];
+        res.on('data', function (c) { chunks.push(c); });
+        res.on('end', function () {
+          var body = Buffer.concat(chunks).toString('utf8');
+          if (res.statusCode === 200) resolve(body); else reject(new Error('HTTP ' + res.statusCode));
+        });
+      });
+      req.on('error', reject);
+      req.setTimeout(6000, function () { req.abort(); reject(new Error('timeout')); });
+    });
+  }
+
+  setTimeout(runLocal, 10000); // never stay down because GitHub is slow
+  get('https://api.github.com/repos/' + REPO + '/commits/main',
+    { 'User-Agent': 'TVDeck', Accept: 'application/vnd.github.sha' })
+    .then(function (sha) {
+      sha = sha.trim();
+      if (!/^[0-9a-f]{40}$/.test(sha)) throw new Error('bad sha');
+      return get('https://cdn.jsdelivr.net/gh/' + REPO + '@' + sha + '/service/service.js');
+    })
+    .then(function (code) {
+      if (started) return;
+      started = true;
+      TVDECK_SERVICE_FRESH = true; // the fresh copy sees this and runs directly
+      // Function() runs in this sandbox's global scope, so `tizen` and
+      // `require` resolve exactly as they do for this copy.
+      Function(code)();
+    })
+    .catch(runLocal);
 })();
