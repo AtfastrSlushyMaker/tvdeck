@@ -270,13 +270,19 @@ var Platform = (function () {
     });
   }
 
-  // Leaves for the Samsung home screen.
+  // Closes TVDeck (and TizenBrew) and returns to what the TV was showing.
+  // window.close() works from the module page, tested on a Tizen 6 TV; the
+  // service's Home key is only a fallback in case the window stays open.
   function exit() {
     if (HAS_TIZEN) {
-      tizen.application.getCurrentApplication().hide();
+      tizen.application.getCurrentApplication().exit();
       return Promise.resolve();
     }
-    return IS_TV ? service('/api/exit', {}) : Promise.resolve();
+    if (!IS_TV) return Promise.resolve();
+    window.close();
+    return new Promise(function (resolve) { setTimeout(resolve, 600); }).then(function () {
+      return service('/api/exit', {});
+    });
   }
 
   return {
