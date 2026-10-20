@@ -853,9 +853,15 @@ function tvdeckService() {
       if (started) return;
       started = true;
       TVDECK_SERVICE_FRESH = true; // the fresh copy sees this and runs directly
-      // Function() runs in this sandbox's global scope, so `tizen` and
-      // `require` resolve exactly as they do for this copy.
-      Function(code)();
+      // Function() runs in this sandbox's global scope, so `tizen` resolves
+      // as it does for this copy; `require` is passed in (it is module-scoped
+      // in plain Node).
+      try {
+        Function('require', code)(require);
+      } catch (e) {
+        started = false;
+        runLocal();
+      }
     })
     .catch(runLocal);
 })();
