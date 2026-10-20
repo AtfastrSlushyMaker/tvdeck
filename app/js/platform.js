@@ -19,13 +19,18 @@ var Platform = (function () {
   var TB_SOCKET = 'ws://localhost:8081';
   var TB_EVENTS = { GetModules: 4, LaunchModule: 5, ModuleAction: 10 };
 
-  // Apps that clutter the list on Samsung TVs and are never launched by hand.
-  var HIDDEN_APP_PATTERNS = [
-    /^org\.tizen\./,
-    /^com\.samsung\.tv\.(?!store)/,
-    /widget/i,
-    /service$/i
-  ];
+  // A Samsung TV reports ~370 apps, mostly system components. Store apps
+  // have ids like "IkWsFHtOY9.Stremio" (10-character package + name); the
+  // few built-ins people actually open are listed by id.
+  var STORE_APP_ID = /^[A-Za-z0-9]{10}\.[A-Za-z0-9_-]+$/;
+  var BUILT_IN_APPS = {
+    'org.tizen.netflix-app': true,
+    'org.tizen.primevideo': true,
+    'org.tizen.browser': true,
+    'com.samsung.tv.store': true,
+    'com.samsung.tv.gallery': true
+  };
+  var NEVER_SHOW = { 'xvvl3S1bvH.TizenBrewStandalone': true }; // TizenBrew itself
 
   // Desktop-only stand-ins for app artwork so the UI can be judged off the TV.
   function mockArt(bg, fg, text, size) {
@@ -61,21 +66,23 @@ var Platform = (function () {
     { fullName: 'npm/@gforceweb/smarttv-twitch-hls', appName: 'Twitch', appPath: '#', keys: [], packageType: 'app' }
   ];
 
-  function isHiddenApp(info) {
-    if (info.show === false) return true;
-    for (var i = 0; i < HIDDEN_APP_PATTERNS.length; i++) {
-      if (HIDDEN_APP_PATTERNS[i].test(info.id)) return true;
-    }
-    return false;
+  function isUserApp(info) {
+    if (info.show === false || NEVER_SHOW[info.id]) return false;
+    return BUILT_IN_APPS[info.id] || STORE_APP_ID.test(info.id);
+  }
+
+  // "Spotify - Music and Podcasts" -> "Spotify", "TF1+ : Streaming…" -> "TF1+"
+  function shortName(name) {
+    return name.split(/\s+[-:\u2013|]\s+/)[0].trim();
   }
 
   var appsError = null;   // why the app list is empty on the TV, if it is
 
   function tidyApps(infos) {
     return infos
-      .filter(function (info) { return info.name && !isHiddenApp(info); })
+      .filter(function (info) { return info.name && isUserApp(info); })
       .map(function (info) {
-        return { id: info.id, name: info.name, icon: info.iconPath || info.icon || '', categories: info.categories || [] };
+        return { id: info.id, name: shortName(info.name), icon: info.iconPath || info.icon || '', categories: info.categories || [] };
       })
       .sort(function (a, b) { return a.name.localeCompare(b.name); });
   }

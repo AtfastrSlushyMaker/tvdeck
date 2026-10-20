@@ -13,11 +13,11 @@ var Categories = (function () {
     ['Kids', /kids|junior|cartoon|nick|baby|disney ?jr|pbs/i],
     ['Sports', /dazn|bein|espn|nba|nfl|nhl|mlb|formula|\bf1\b|uefa|fifa|sky sports|eurosport|fubo|ssc|sport|golf|tennis|ufc|wwe/i],
     ['Games', /game|xbox|geforce|steam|luna|blacknut|antstream|playstation|utomik|boosteroid|arcade/i],
-    ['News', /news|cnn|bbc|al ?jazeera|france ?24|euronews|bloomberg|cnbc|reuters|dw\b/i],
-    ['Streaming', /netflix|prime video|amazon|disney|hulu|hbo|\bmax\b|apple tv|paramount|peacock|starz|showtime|plex|jellyfin|emby|stremio|kodi|shahid|osn|crunchyroll|mubi|rakuten|viu|watch ?it|canal|molotov|pluto|tubi|tv plus|filmin|tod\b|mbc|stc tv|yango|discovery/i],
+    ['News', /news|cnn|bbc|al ?jazeera|france ?24|euronews|bloomberg|cnbc|reuters|dw\b|sharq|\u0627\u0644\u0634\u0631\u0642/i],
+    ['Streaming', /netflix|prime video|amazon|disney|hulu|hbo|\bmax\b|apple tv|paramount|peacock|starz|showtime|plex|jellyfin|emby|stremio|kodi|shahid|osn|crunchyroll|mubi|rakuten|viu|watch ?it|canal|molotov|pluto|tubi|tv plus|filmin|tod\b|mbc|stc tv|yango|discovery|tf1|iptv|smarters|globoplay/i],
     ['Video', /youtube|tizentube|twitch|vimeo|dailymotion|tiktok|facebook|kick\b|ted\b/i],
     ['Lifestyle', /fitness|yoga|peloton|workout|cook|recipe|travel|calm|headspace|meditat|art store|ambient/i],
-    ['Utilities', /internet|browser|smartthings|store|^apps$|settings|gallery|media|usb|e-manual|manual|help|guide|bixby|alexa|assistant|mirror|remote|file|camera|health|weather|workspace|office|zoom|teams/i]
+    ['Utilities', /internet|browser|smartthings|store|^apps$|settings|gallery|media|usb|e-manual|manual|help|guide|bixby|alexa|assistant|mirror|remote|file|camera|health|weather|workspace|office|zoom|teams|security/i]
   ];
 
   // Tizen ApplicationInformation.categories are URIs or plain words.
