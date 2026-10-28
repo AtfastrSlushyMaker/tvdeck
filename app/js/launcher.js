@@ -94,7 +94,7 @@
     var items = {};
     data.apps.forEach(function (app) {
       items['app:' + app.id] = { key: 'app:' + app.id, kind: 'app', name: app.name, icon: app.icon, ref: app,
-        category: Categories.categorize(app) };
+        category: Categories.categorize(app, Store.get('appCategories')) };
     });
     data.modules.forEach(function (mod) {
       items['mod:' + mod.fullName] = { key: 'mod:' + mod.fullName, kind: 'mod', name: mod.appName || mod.name, badge: 'Module', ref: mod };
@@ -106,6 +106,31 @@
       items['key:' + input.key] = { key: 'key:' + input.key, kind: 'key', name: input.name, badge: 'Input', ref: input };
     });
     return items;
+  }
+
+  function favoritesSnapshot() {
+    var entries = catalog();
+    var items = Object.keys(entries).filter(function (key) { return PINNABLE[entries[key].kind]; }).map(function (key) {
+      return { key: key, name: entries[key].name, kind: entries[key].kind };
+    });
+    var favorites = Store.get('favorites').slice();
+    var links = Store.get('webLinks').slice();
+    // The full state is the revision; avoids accepting edits against stale data.
+    return { revision: JSON.stringify([favorites, links]), favorites: favorites, webLinks: links, items: items };
+  }
+
+  function syncPhoneFavorites() {
+    return Platform.service('/api/favorites/pending').then(function (result) {
+      var edit = result.edit;
+      if (edit && edit.revision === favoritesSnapshot().revision) {
+        Store.set('webLinks', edit.webLinks);
+        Store.set('favorites', edit.favorites);
+        buildRows();
+        if (mode === 'home') render();
+        toast('Favorites updated from your phone');
+      }
+      return Platform.service('/api/favorites/snapshot', favoritesSnapshot());
+    }).catch(function () {});
   }
 
   function glanceItems() {
@@ -169,7 +194,7 @@
       return apps.map(function (app) { return items['app:' + app.id]; });
     }
     if (!Store.get('groupApps')) return [{ id: 'apps', title: 'Apps', apps: true, items: toItems(visible) }];
-    return Categories.group(visible).map(function (group) {
+    return Categories.group(visible, Store.get('appCategories')).map(function (group) {
       return { id: 'cat:' + group.name, title: group.name, apps: true, items: toItems(group.apps) };
     });
   }
@@ -583,21 +608,27 @@
   }
 
   function open(item) {
-    if (PINNABLE[item.kind]) rememberRecent(item);
+    function launched() {
+      rememberRecent(item);
+      setTimeout(rebuildIfDirty, Platform.isTV ? 2500 : 700);
+    }
+    function launchFailed() {
+      toast('Could not open ' + item.name + '. Check TizenBrew and try again.');
+    }
     switch (item.kind) {
       case 'app':
-        Platform.launchApp(item.ref.id).catch(function () { toast('Could not open ' + item.name); });
+        Platform.launchApp(item.ref.id).then(launched).catch(launchFailed);
         break;
       case 'mod':
-        Platform.launchModule(item.ref);
+        Platform.launchModule(item.ref).then(launched).catch(launchFailed);
         break;
       case 'web':
         // TVDeck's page has no address bar or back button: use the TV browser.
-        Platform.openInBrowser(item.ref.url).catch(function () { toast('Could not open ' + item.name); });
+        Platform.openInBrowser(item.ref.url).then(launched).catch(function () { toast('Could not open ' + item.name + '. Check the address and TV browser.'); });
         break;
       case 'key':
         Platform.sendKey(item.ref.key)
-          .then(function () { toast('Switching to ' + item.name); })
+          .then(function () { launched(); toast('Switching to ' + item.name); })
           .catch(function () { toast('TVDeck service not running'); });
         break;
       case 'ha':
@@ -612,9 +643,6 @@
         else openSettings();
         break;
     }
-    // Rebuilding now would flash the rows just as the app opens; do it once
-    // we are visible again (or shortly after, when nothing actually left).
-    if (PINNABLE[item.kind]) setTimeout(rebuildIfDirty, Platform.isTV ? 2500 : 700);
   }
 
   function togglePin(item) {
@@ -726,6 +754,7 @@
 
   // Phone messages arrive through the service; poll slowly when it is down.
   function pollInbox() {
+    syncPhoneFavorites();
     Platform.service('/api/inbox').then(function (res) {
       res.items.forEach(function (item) { messages.push(item); });
       showNextMessage();
@@ -799,7 +828,6 @@
         { label: 'Open in browser', action: function () {
           Platform.openInBrowser(item.value).catch(function () { toast('Could not open the link'); });
         } },
-        { label: 'Open here', action: function () { Platform.openUrl(item.value); } },
         { label: 'Dismiss', action: function () {} }
       ] : [{ label: 'Dismiss', action: function () {} }];
     }
@@ -866,10 +894,14 @@
     startup: { title: 'Startup', subtitle: 'What runs when the TV starts', glyph: 'tv' },
     phone: { title: 'Phone & widgets', subtitle: 'Links, inputs, calendar, Home Assistant', glyph: 'phone' },
     web: { title: 'Web shortcuts', subtitle: 'Sites on your home screen', glyph: 'web' },
-    layout: { title: 'Layout', subtitle: 'Rows, ambient screen and reset', glyph: 'app' }
+    layout: { title: 'Layout', subtitle: 'Rows, ambient screen and reset', glyph: 'app' },
+    about: { title: 'About', subtitle: 'The person behind TVDeck', glyph: 'brand' },
+    categories: { title: 'App categories', subtitle: 'Choose where each app appears', glyph: 'app' },
+    diagnostics: { title: 'Updates & diagnostics', subtitle: 'Build and service status', glyph: 'settings' }
   };
 
   var settingsPage = 'root';
+  var diagnosticStatus = null;
   var rootIndex = 0;          // where the menu focus was before opening a page
   var webDraft = { name: '', url: '' };
   var resetArmed = false;     // "Reset everything" needs a second OK
@@ -933,7 +965,58 @@
         link('startup', st.tb ? (st.autoOpen ? 'Opens with TizenBrew' : 'Manual') : 'Service not running'),
         link('phone', serviceRunning() ? 'QR code' : 'Service not running'),
         link('web', links + (links === 1 ? ' site' : ' sites')),
-        link('layout', Store.get('groupApps') ? 'By category' : 'Single row')
+        link('layout', Store.get('groupApps') ? 'By category' : 'Single row'),
+        link('categories', 'Organize apps'),
+        link('diagnostics', 'Version and service'),
+        link('about', 'Malek Bsaissa')
+      ];
+    },
+
+    categories: function () {
+      if (!data.apps.length) return [note('Apps will appear here when the app list is available.')];
+      return data.apps.map(function (app) {
+        var overrides = Store.get('appCategories');
+        var selected = overrides[app.id] || 'Auto';
+        var options = [['Auto', 'Auto (' + Categories.categorize(app) + ')']];
+        Categories.options.forEach(function (name) { options.push([name, name]); });
+        var row = choice(app.name, options, selected, function (value) {
+          var updated = Store.get('appCategories');
+          if (value === 'Auto') delete updated[app.id]; else updated[app.id] = value;
+          Store.set('appCategories', updated);
+        });
+        row.compactChoice = true;
+        return row;
+      });
+    },
+
+    about: function () {
+      return [
+        note('Created by Malek Bsaissa'),
+        settingRow('GitHub profile', 'AtfastrSlushyMaker', function () {
+          Platform.openInBrowser('https://github.com/AtfastrSlushyMaker').catch(function () {
+            toast('Could not open GitHub');
+          });
+        })
+      ];
+    },
+
+    diagnostics: function () {
+      var loadedBuild = window.TVDECK_BUILD || 'Unknown (initial install)';
+      var latest = window.TVDECK_LATEST || 'Not checked';
+      return [
+        note('Launcher build: ' + loadedBuild),
+        note('Service: ' + (diagnosticStatus ? (diagnosticStatus.tizen ? 'Connected to TV' : 'Connected (desktop)') : 'Unavailable')),
+        note('Service build: ' + ((diagnosticStatus && diagnosticStatus.build) || 'Unknown')),
+        note('Latest build: ' + latest),
+        settingRow('Check for update', 'Check GitHub', function () {
+          if (!window.TVDECK_CHECK_UPDATE) return toast('Updates are available for GitHub installations');
+          window.TVDECK_CHECK_UPDATE().then(function (sha) {
+            toast(!sha ? 'Could not check for updates' : sha === window.TVDECK_BUILD
+              ? 'Launcher is up to date' : 'Restart TVDeck to load the latest launcher');
+            renderSettings();
+          }).catch(function () { toast('Could not check for updates. Check your connection.'); });
+          return true;
+        })
       ];
     },
 
@@ -1097,7 +1180,7 @@
           node.appendChild(input);
           item.input = input;
         } else if (item.type === 'choice') {
-          var group = el('span', 'choice-options');
+          var group = el('span', 'choice-options' + (item.compactChoice ? ' compact-choice' : ''));
           item.optionEls = item.options.map(function (opt) {
             var o = el('span', 'choice-option' + (opt[0] === item.value ? ' selected' : ''), opt[1]);
             group.appendChild(o);
@@ -1174,6 +1257,15 @@
   function goToPage(page, back) {
     settingsPage = page;
     renderSettings();
+    if (page === 'diagnostics') {
+      diagnosticStatus = null;
+      Platform.service('/api/status').then(function (status) {
+        diagnosticStatus = status;
+        if (mode === 'settings' && settingsPage === 'diagnostics') renderSettings();
+      }).catch(function () {
+        if (mode === 'settings' && settingsPage === 'diagnostics') renderSettings();
+      });
+    }
     replay(els.settingsPanel, back ? 'page-back' : 'page-forward');
     replay(els.settingsSide, 'page-swap');
     renderHints();

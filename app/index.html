@@ -11,26 +11,32 @@
     // So code loads from the exact commit seen last time (immutable URLs),
     // and a newer commit is looked up in the background for the next launch.
     (function () {
-      var KEY = 'tvdeck:build';
       // gh/user/repo, optionally pinned (@ref): after one launch, the newest
       // commit is always used.
       var gh = /\/module\/gh%2F([^/%]+)%2F([^/%@]+)(?:%40[^/]*)?\//.exec(location.pathname);
+      // TizenBrew modules share an origin: isolate cached builds by repo.
+      var KEY = 'tvdeck:build' + (gh ? ':' + gh[1].toLowerCase() + '/' + gh[2].toLowerCase() : '');
       var base = '';
       try {
         var build = localStorage.getItem(KEY);
-        if (gh && build) base = 'https://cdn.jsdelivr.net/gh/' + gh[1] + '/' + gh[2] + '@' + build + '/app/';
+        if (gh && /^[0-9a-f]{12}$/.test(build || '')) base = 'https://cdn.jsdelivr.net/gh/' + gh[1] + '/' + gh[2] + '@' + build + '/app/';
       } catch (e) { /* storage unavailable: use the proxied files */ }
       window.TVDECK_BASE = base;
+      window.TVDECK_BUILD = base ? build : null;
       document.write('<link rel="stylesheet" href="' + base + 'style.css">');
       if (!gh || !window.fetch) return;
-      fetch('https://api.github.com/repos/' + gh[1] + '/' + gh[2] + '/commits/main',
+      window.TVDECK_CHECK_UPDATE = function () { return fetch('https://api.github.com/repos/' + gh[1] + '/' + gh[2] + '/commits/main',
         { headers: { Accept: 'application/vnd.github.sha' } })
         .then(function (res) { return res.ok ? res.text() : ''; })
         .then(function (sha) {
           sha = sha.trim();
-          if (/^[0-9a-f]{40}$/.test(sha)) localStorage.setItem(KEY, sha.slice(0, 12));
+          if (!/^[0-9a-f]{40}$/.test(sha)) throw new Error('Invalid update response');
+          window.TVDECK_LATEST = sha.slice(0, 12);
+          localStorage.setItem(KEY, window.TVDECK_LATEST);
+          return window.TVDECK_LATEST;
         })
-        .catch(function () { /* offline: keep the current build */ });
+        .catch(function () { return null; }); };
+      window.TVDECK_CHECK_UPDATE();
     })();
   </script>
 </head>

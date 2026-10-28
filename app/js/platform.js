@@ -25,6 +25,7 @@ var Platform = (function () {
   var STORE_APP_ID = /^[A-Za-z0-9]{10}\.[A-Za-z0-9_-]+$/;
   var BUILT_IN_APPS = {
     'org.tizen.netflix-app': true,
+    'com.samsung.tv.cobalt-yt': true,
     'org.tizen.primevideo': true,
     'org.tizen.browser': true,
     'com.samsung.tv.store': true,
@@ -67,8 +68,9 @@ var Platform = (function () {
   ];
 
   function isUserApp(info) {
-    if (info.show === false || NEVER_SHOW[info.id]) return false;
-    return BUILT_IN_APPS[info.id] || STORE_APP_ID.test(info.id);
+    if (NEVER_SHOW[info.id]) return false;
+    if (BUILT_IN_APPS[info.id]) return true;
+    return info.show !== false && STORE_APP_ID.test(info.id);
   }
 
   // "Spotify - Music and Podcasts" -> "Spotify", "TF1+ : Streaming…" -> "TF1+"
@@ -105,6 +107,20 @@ var Platform = (function () {
   }
 
   function launchApp(id) {
+    // Some TVs expose YouTube under the Cobalt ID but accept another ID
+    // when launching. Only try these alternatives for that specific app.
+    var alternatives = id === 'com.samsung.tv.cobalt-yt'
+      ? ['111299001912', '9Ur5IzDKqV.TizenYouTube'] : [];
+    function attempt(appId) {
+      return launchOne(appId).catch(function (error) {
+        if (!alternatives.length) throw error;
+        return attempt(alternatives.shift());
+      });
+    }
+    return attempt(id);
+  }
+
+  function launchOne(id) {
     if (!IS_TV) {
       console.log('[mock] launch app', id);
       return Promise.resolve();
@@ -160,14 +176,29 @@ var Platform = (function () {
   function launchModule(mod) {
     if (!IS_TV) {
       console.log('[mock] launch module', mod.fullName);
-      return;
+      return Promise.resolve();
     }
     registerKeys(mod.keys || []);
-    var socket = new WebSocket(TB_SOCKET);
-    socket.onopen = function () {
-      socket.send(JSON.stringify({ type: TB_EVENTS.LaunchModule, payload: mod }));
-      if (!mod.evaluateScriptOnDocumentStart) location.href = mod.appPath;
-    };
+    return new Promise(function (resolve, reject) {
+      var socket;
+      var done = false;
+      function finish(error) {
+        if (done) return;
+        done = true;
+        if (error) reject(error); else resolve();
+      }
+      try { socket = new WebSocket(TB_SOCKET); }
+      catch (error) { return finish(error); }
+      socket.onopen = function () {
+        try {
+          socket.send(JSON.stringify({ type: TB_EVENTS.LaunchModule, payload: mod }));
+          if (!mod.evaluateScriptOnDocumentStart) location.href = mod.appPath;
+          finish();
+        } catch (error) { finish(error); }
+      };
+      socket.onerror = function () { finish(new Error('TizenBrew did not connect')); };
+      setTimeout(function () { if (!done) { try { socket.close(); } catch (e) {} finish(new Error('TizenBrew timed out')); } }, 5000);
+    });
   }
 
   function openUrl(url) {
@@ -270,18 +301,17 @@ var Platform = (function () {
     });
   }
 
-  // Closes TVDeck (and TizenBrew) and returns to what the TV was showing.
-  // window.close() works from the module page, tested on a Tizen 6 TV; the
-  // service's Home key is only a fallback in case the window stays open.
+  // Ask the TV to close the app. If an HTTP-served module cannot close its
+  // window, return to TizenBrew's own UI instead of leaving the user stuck.
   function exit() {
     if (HAS_TIZEN) {
       tizen.application.getCurrentApplication().exit();
       return Promise.resolve();
     }
     if (!IS_TV) return Promise.resolve();
-    window.close();
+    try { window.close(); } catch (e) { /* fall through to TizenBrew */ }
     return new Promise(function (resolve) { setTimeout(resolve, 600); }).then(function () {
-      return service('/api/exit', {});
+      window.location.replace('/tizenbrew-ui/dist/index.html');
     });
   }
 

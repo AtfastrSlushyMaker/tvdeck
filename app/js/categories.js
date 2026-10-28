@@ -29,7 +29,8 @@ var Categories = (function () {
     ['Kids', /kid/i]
   ];
 
-  function categorize(app) {
+  function categorize(app, overrides) {
+    if (overrides && ORDER.indexOf(overrides[app.id]) !== -1) return overrides[app.id];
     var name = app.name || '';
     for (var i = 0; i < RULES.length; i++) {
       if (RULES[i][1].test(name)) return RULES[i][0];
@@ -42,10 +43,10 @@ var Categories = (function () {
   }
 
   // Returns [{ name, apps }] in display order, skipping empty groups.
-  function group(apps) {
+  function group(apps, overrides) {
     var buckets = {};
     apps.forEach(function (app) {
-      var cat = categorize(app);
+      var cat = categorize(app, overrides);
       (buckets[cat] = buckets[cat] || []).push(app);
     });
     return ORDER.filter(function (name) { return buckets[name]; }).map(function (name) {
@@ -53,5 +54,5 @@ var Categories = (function () {
     });
   }
 
-  return { categorize: categorize, group: group };
+  return { categorize: categorize, group: group, options: ORDER.slice() };
 })();

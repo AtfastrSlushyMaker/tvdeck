@@ -848,6 +848,11 @@ body.sheet-on .viewport {
 /* Inline selector: Left/Right moves the highlight */
 .choice-options { display: flex; }
 
+.compact-choice .choice-option { display: none; }
+.compact-choice .choice-option.selected { display: inline-block; }
+.compact-choice::before { content: '\2039'; }
+.compact-choice::after { content: '\203A'; }
+
 .tile, .setting, .choice-option { cursor: default; }
 
 .choice-option {

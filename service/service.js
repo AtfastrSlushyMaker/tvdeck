@@ -68,6 +68,9 @@ function tvdeckService() {
   var pin = String(1000 + Math.floor(Math.random() * 9000));
   var pinFailures = { count: 0, lockedUntil: 0 };
   var inbox = [];
+  // The launcher owns these settings; the phone submits a versioned edit.
+  var phoneSnapshot = null;
+  var phoneEdit = null;
   var deviceIP = null;
   var config = readConfig();
 
@@ -661,6 +664,24 @@ function tvdeckService() {
       if (!checkPin(url.query.pin)) return send(res, 403, { error: 'Wrong PIN' });
       return send(res, 200, publicSettings());
     }
+    if (route === 'GET /api/favorites') {
+      if (!checkPin(url.query.pin)) return send(res, 403, { error: 'Wrong PIN' });
+      return send(res, 200, phoneSnapshot || { error: 'Open TVDeck to load favorites' });
+    }
+    if (route === 'POST /api/favorites') {
+      return readBody(req).then(function (body) {
+        if (!checkPin(body.pin)) return send(res, 403, { error: 'Wrong PIN' });
+        if (!phoneSnapshot || body.revision !== phoneSnapshot.revision || phoneEdit) return send(res, 409, { error: 'Favorites changed; reload before saving' });
+        if (!Array.isArray(body.favorites) || !Array.isArray(body.webLinks) || body.favorites.length > 100 || body.webLinks.length > 100) return send(res, 400, { error: 'Invalid favorites' });
+        var links = body.webLinks;
+        if (!links.every(function (link) { return link && typeof link.name === 'string' && link.name.trim() && link.name.length <= 100 && typeof link.url === 'string' && link.url.length <= 2000 && /^https?:\/\/[^\s]+$/i.test(link.url); })) return send(res, 400, { error: 'Enter a name and valid HTTP(S) URL for each shortcut' });
+        var allowed = phoneSnapshot.items.map(function (item) { return item.key; }).filter(function (key) { return key.indexOf('web:') !== 0; });
+        links.forEach(function (link) { allowed.push('web:' + link.url); });
+        if (!body.favorites.every(function (key, i) { return typeof key === 'string' && allowed.indexOf(key) !== -1 && body.favorites.indexOf(key) === i; })) return send(res, 400, { error: 'Invalid favorite' });
+        phoneEdit = { revision: body.revision, favorites: body.favorites, webLinks: links };
+        return send(res, 202, { ok: true, message: 'Sent to TVDeck; keep TVDeck open to apply.' });
+      }).catch(fail(res));
+    }
     if (route === 'POST /api/settings') {
       return readBody(req).then(function (body) {
         if (!checkPin(body.pin)) return send(res, 403, { error: 'Wrong PIN' });
@@ -685,6 +706,18 @@ function tvdeckService() {
       var items = inbox;
       inbox = [];
       return send(res, 200, { items: items });
+    }
+    if (route === 'POST /api/favorites/snapshot') {
+      return readBody(req).then(function (body) {
+        if (!Array.isArray(body.items) || !Array.isArray(body.favorites) || !Array.isArray(body.webLinks) || typeof body.revision !== 'string') return send(res, 400, { error: 'Invalid snapshot' });
+        phoneSnapshot = body;
+        return send(res, 200, { ok: true });
+      }).catch(fail(res));
+    }
+    if (route === 'GET /api/favorites/pending') {
+      var edit = phoneEdit;
+      phoneEdit = null;
+      return send(res, 200, { edit: edit });
     }
     if (route === 'POST /api/key') {
       return readBody(req).then(function (body) {
@@ -715,6 +748,7 @@ function tvdeckService() {
       return send(res, 200, {
         node: typeof process !== 'undefined' ? process.version : null,
         tizen: HAS_TIZEN,
+        build: typeof TVDECK_SERVICE_BUILD === 'string' ? TVDECK_SERVICE_BUILD : null,
         remote: remote.ready,
         ip: deviceIP
       });
@@ -772,6 +806,12 @@ function tvdeckService() {
     '<h2>Send to TV</h2><div class="group">',
     '<label for="link">Link or text</label><input id="link" placeholder="Paste a link or type a message" autocomplete="off">',
     '<button id="send">Send to TV</button></div><div class="msg" id="send-msg"></div>',
+    '<h2>Favorites and shortcuts</h2><div class="group">',
+    '<p class="hint">Open TVDeck on your TV, then edit your favorites here.</p><div id="favorites"></div>',
+    '<label for="favAdd">Add an existing app or input</label><select id="favAdd"></select><button id="pinItem">Add to favorites</button>',
+    '<label for="shortcutName">New shortcut name</label><input id="shortcutName" maxlength="100" placeholder="My website">',
+    '<label for="shortcutUrl">Website URL</label><input id="shortcutUrl" type="url" placeholder="https://example.com">',
+    '<button id="addShortcut">Add shortcut</button><button id="saveFavorites">Send changes to TV</button></div><div class="msg" id="favorites-msg"></div>',
     '<h2>Inputs</h2><div class="group">',
     '<label for="inputs">One per line: Name=KEY</label><textarea id="inputs"></textarea>',
     '<p class="hint">Keys: KEY_HDMI1-4, KEY_TV, KEY_SOURCE. Example: PlayStation=KEY_HDMI2</p></div>',
@@ -787,6 +827,11 @@ function tvdeckService() {
     'var pin=new URLSearchParams(location.search).get("pin")||prompt("PIN shown on the TV")||"";',
     'function $(id){return document.getElementById(id)}',
     'function post(path,body){body.pin=pin;return fetch(path,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)}).then(function(r){return r.json().then(function(j){if(!r.ok)throw new Error(j.error||r.status);return j})})}',
+    'var favoriteState=null;function renderFavorites(){var box=$("favorites");box.textContent="";var s=favoriteState;if(!s)return;s.favorites.forEach(function(key,i){var item=s.items.filter(function(x){return x.key===key})[0];var link=s.webLinks.filter(function(x){return "web:"+x.url===key})[0];var row=document.createElement("div");row.style.margin="12px 0";var title=document.createElement("span");title.textContent=link?link.name:(item?item.name:key);row.appendChild(title);function button(label,fn,disabled){var b=document.createElement("button");b.textContent=label;b.style.cssText="width:auto;margin:4px;padding:8px";b.disabled=disabled;b.onclick=fn;row.appendChild(b)}button("↑",function(){var v=s.favorites.splice(i,1)[0];s.favorites.splice(i-1,0,v);renderFavorites()},i===0);button("↓",function(){var v=s.favorites.splice(i,1)[0];s.favorites.splice(i+1,0,v);renderFavorites()},i===s.favorites.length-1);if(link)button("Rename",function(){var n=prompt("Shortcut name",link.name);if(n&&n.trim()){link.name=n.trim().slice(0,100);renderFavorites()}});button("Remove",function(){s.favorites.splice(i,1);renderFavorites()});box.appendChild(row)});var sel=$("favAdd");sel.textContent="";s.items.forEach(function(item){if(s.favorites.indexOf(item.key)!==-1)return;var o=document.createElement("option");o.value=item.key;o.textContent=item.name;sel.appendChild(o)})}',
+    'fetch("/api/favorites?pin="+encodeURIComponent(pin)).then(function(r){return r.json()}).then(function(s){if(s.error){$("favorites-msg").textContent=s.error;return}favoriteState=s;renderFavorites()}).catch(function(){$("favorites-msg").textContent="Could not load favorites"});',
+    '$("pinItem").onclick=function(){if(favoriteState&&$("favAdd").value){favoriteState.favorites.push($("favAdd").value);renderFavorites()}};',
+    '$("addShortcut").onclick=function(){if(!favoriteState)return;var n=$("shortcutName").value.trim(),u=$("shortcutUrl").value.trim();if(!n||!/^https?:/i.test(u)||u.indexOf("://")<0||/\\s/.test(u)){ $("favorites-msg").textContent="Enter a name and an HTTP(S) URL";return}if(favoriteState.webLinks.some(function(x){return x.url===u})){ $("favorites-msg").textContent="That shortcut already exists";return}favoriteState.webLinks.push({name:n,url:u});favoriteState.favorites.push("web:"+u);$("shortcutName").value="";$("shortcutUrl").value="";renderFavorites()};',
+    '$("saveFavorites").onclick=function(){if(!favoriteState)return;post("/api/favorites",favoriteState).then(function(r){$("favorites-msg").textContent=r.message;$("saveFavorites").disabled=true}).catch(function(e){$("favorites-msg").textContent=e.message})};',
     'function fill(s){["calendarUrl","haUrl","haEntities","inputs"].forEach(function(k){$(k).value=s[k]||""});$("haToken").placeholder=s.haTokenSet?"Saved. Leave empty to keep it":"Paste token"}',
     'fetch("/api/settings?pin="+encodeURIComponent(pin)).then(function(r){return r.json()}).then(function(s){if(s.error){$("save-msg").textContent=s.error}else fill(s)});',
     '$("send").onclick=function(){var v=$("link").value.trim();if(!v)return;var isUrl=/^(https?:\\/\\/|www\\.)/i.test(v);',
@@ -847,18 +892,22 @@ function tvdeckService() {
     .then(function (sha) {
       sha = sha.trim();
       if (!/^[0-9a-f]{40}$/.test(sha)) throw new Error('bad sha');
-      return get('https://cdn.jsdelivr.net/gh/' + REPO + '@' + sha + '/service/service.js');
+      return get('https://cdn.jsdelivr.net/gh/' + REPO + '@' + sha + '/service/service.js').then(function (code) {
+        return { code: code, build: sha.slice(0, 12) };
+      });
     })
-    .then(function (code) {
+    .then(function (result) {
       if (started) return;
       started = true;
+      TVDECK_SERVICE_BUILD = result.build;
       TVDECK_SERVICE_FRESH = true; // the fresh copy sees this and runs directly
       // Function() runs in this sandbox's global scope, so `tizen` resolves
       // as it does for this copy; `require` is passed in (it is module-scoped
       // in plain Node).
       try {
-        Function('require', code)(require);
+        Function('require', result.code)(require);
       } catch (e) {
+        TVDECK_SERVICE_BUILD = null;
         started = false;
         runLocal();
       }

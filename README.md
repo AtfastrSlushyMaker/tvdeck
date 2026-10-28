@@ -30,6 +30,9 @@ TVDeck is an independent project and is not affiliated with TizenBrew or Samsung
 - **Clock and weather**: weather comes from [Open-Meteo](https://open-meteo.com) (no API key, no tracking).
 - **Auto-start**: open TVDeck when TizenBrew starts, and start the phone service at boot.
 - **Guided settings**: a short menu of pages; options that can't be used yet are shown disabled with the reason and what unlocks them, and destructive actions ask for a second OK in place.
+- **Updates & diagnostics**: see the launcher and service build when known, check service connectivity and check GitHub for a newer launcher. Restart TVDeck to load a checked update; service updates happen on service restart.
+- **Personal categories**: Settings → App categories lets you override each app's automatic category or return it to Auto.
+- **Phone favorites**: with TVDeck open, scan its phone QR code to add, rename, remove and reorder favorite shortcuts or pin installed apps and inputs. Changes are sent to the running launcher; stale edits must be reloaded before saving.
 - **No ads, no telemetry**. The only outside requests are the weather lookup and the calendar and Home Assistant you configure.
 
 ## How it works

@@ -11,6 +11,7 @@ var Store = (function () {
   var DEFAULTS = {
     favorites: [],          // item keys, e.g. "app:3201907018807", "mod:npm/foo", "web:0"
     hiddenApps: [],         // app ids
+    appCategories: {},      // app id -> user-selected category
     recent: [],             // item keys, most recent first
     openedAt: {},           // item key -> last opened (ms), for the shelf
     appsCache: null,        // last app list, so the home screen draws instantly
