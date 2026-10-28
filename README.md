@@ -89,10 +89,10 @@ the packaged service. The service and launcher builds can therefore differ.
 ## Install on your TV
 
 1. Install TizenBrew on the TV (Developer Mode on).
-2. Open TizenBrew → **Module Manager** → **Add GitHub module**.
-3. Enter `AtfastrSlushyMaker/tvdeck`. Once the npm package is published, choose
-   **Add NPM module** and enter `@malek.bsaissa/tizenbrew-tvdeck` instead.
-4. Optional: set TVDeck as TizenBrew's **auto-launch** module so it opens when TizenBrew starts.
+2. Open TizenBrew → **Module Manager** → **Add NPM module**.
+3. Enter `@malek.bsaissa/tizenbrew-tvdeck`.
+4. Alternatively, choose **Add GitHub module** and enter `AtfastrSlushyMaker/tvdeck`.
+5. Optional: set TVDeck as TizenBrew's **auto-launch** module so it opens when TizenBrew starts.
 
 If switching from the GitHub module to the npm module, remove the old entry
 first, then set auto-launch again if needed.
