@@ -47,7 +47,8 @@ artwork, and available versions may differ.
 - **About**: see the TVDeck package, Tizen platform and installed TizenBrew versions when available, alongside the creator's GitHub profile.
 - **Personal categories**: Settings → App categories lets you pick from a list for each app or return it to Automatic.
 - **Phone favorites**: with TVDeck open, scan its phone QR code to add, rename, remove and reorder favorite shortcuts or pin installed apps and inputs. Changes are sent to the running launcher; stale edits must be reloaded before saving.
-- **No ads, no telemetry**. The only outside requests are the weather lookup and the calendar and Home Assistant you configure.
+- **No ads, no telemetry**. Module and update files use jsDelivr and GitHub;
+  weather and any calendar or Home Assistant integrations make their own requests.
 
 ## How it works
 
@@ -62,6 +63,9 @@ TV ─ TizenBrew ─┬─ app/        launcher UI (served via jsDelivr)
 
 The service starts when TVDeck is opened from TizenBrew, or at boot if enabled in Settings.
 The first time it sends a remote key, the TV asks to allow "TVDeck". Accept it once.
+On startup, the service checks GitHub's `main` branch for its latest build,
+including when the launcher was installed from npm; if the check fails, it uses
+the packaged service. The service and launcher builds can therefore differ.
 
 ## Requirements
 
@@ -86,7 +90,8 @@ The first time it sends a remote key, the TV asks to allow "TVDeck". Accept it o
 
 1. Install TizenBrew on the TV (Developer Mode on).
 2. Open TizenBrew → **Module Manager** → **Add module**.
-3. Enter `tvdeck` (npm), or `gh/<user>/tvdeck` to load straight from GitHub.
+3. Enter `gh/AtfastrSlushyMaker/tvdeck` to load TVDeck from GitHub. Once the
+   npm package is published, `tvdeck` can also be used.
 4. Optional: set TVDeck as TizenBrew's **auto-launch** module so it opens when TizenBrew starts.
 
 ## Brand
@@ -126,14 +131,6 @@ Notes:
 - `app/js/platform.js` is the only file that talks to Tizen/TizenBrew APIs.
 - `service/service.js` runs on the TV's Node (as old as v4 on Tizen 3): ES5 only.
 - `app/vendor/qrcode.js` is [qrcode-generator](https://github.com/kazuhikoarase/qrcode-generator) 2.0.4 (MIT).
-
-## Publish
-
-```bash
-npm publish
-```
-
-jsDelivr caches packages, so a new version can take a few minutes to reach the TV.
 
 ## License
 

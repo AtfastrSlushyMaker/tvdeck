@@ -1,11 +1,20 @@
 {
   "name": "tvdeck",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "TVDeck: a fast, ad-free home launcher for Samsung Tizen TVs, runs as a TizenBrew app module.",
+  "author": "Malek Bsaissa",
   "packageType": "app",
   "appName": "TVDeck",
   "appPath": "app/index.html",
   "serviceFile": "service/service.js",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/AtfastrSlushyMaker/tvdeck.git"
+  },
+  "homepage": "https://github.com/AtfastrSlushyMaker/tvdeck#readme",
+  "bugs": {
+    "url": "https://github.com/AtfastrSlushyMaker/tvdeck/issues"
+  },
   "keys": [
     "ColorF0Red",
     "ColorF1Green",
@@ -16,7 +25,10 @@
   ],
   "files": [
     "app/",
-    "service/"
+    "service/",
+    "assets/brand/tvdeck-wordmark.png",
+    "assets/brand/tvdeck-wordmark-dark.png",
+    "docs/screenshots/"
   ],
   "keywords": [
     "tizenbrew",

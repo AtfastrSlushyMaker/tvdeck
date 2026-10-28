@@ -31,8 +31,8 @@
   --press: cubic-bezier(0.4, 0, 0.6, 1);
   --sine: cubic-bezier(0.45, 0, 0.55, 1);
   --ease-in: cubic-bezier(0.5, 0, 0.75, 0); /* exits: accelerate away, faster than entrances */
-  --t-focus: 480ms;
-  --t-travel: 650ms;
+  --t-focus: 320ms;
+  --t-travel: 400ms;
 }
 
 * { box-sizing: border-box; }
@@ -67,7 +67,10 @@ html, body {
   opacity: 0;
   transition: opacity 1100ms var(--ease);
   animation: drift 26s var(--sine) infinite alternate;
+  animation-play-state: paused;
 }
+
+.wash.is-active { animation-play-state: running; }
 
 /* The wash never sits still: a slow drift and swell, like light moving */
 @keyframes drift {
@@ -453,10 +456,10 @@ body.scrolled .shelf-status .ticker {
 }
 
 /* Momentum: focus arriving from a direction overshoots slightly, then settles */
-.tile.nudge-right .tile-art { animation: nudge-right 520ms var(--ease); }
-.tile.nudge-left .tile-art { animation: nudge-left 520ms var(--ease); }
-.tile.nudge-down .tile-art { animation: nudge-down 520ms var(--ease); }
-.tile.nudge-up .tile-art { animation: nudge-up 520ms var(--ease); }
+.tile.nudge-right .tile-art { animation: nudge-right 400ms var(--ease); }
+.tile.nudge-left .tile-art { animation: nudge-left 400ms var(--ease); }
+.tile.nudge-down .tile-art { animation: nudge-down 400ms var(--ease); }
+.tile.nudge-up .tile-art { animation: nudge-up 400ms var(--ease); }
 
 @keyframes nudge-right { from { transform: translateX(-0.9vw); } to { transform: none; } }
 @keyframes nudge-left { from { transform: translateX(0.9vw); } to { transform: none; } }
@@ -730,9 +733,9 @@ body.sheet-on .viewport {
 }
 
 /* Page change: the left column cross-fades, the list slides in */
-.settings-side.page-swap > * { animation: fade-in 450ms var(--ease) both; }
-.settings-panel.page-forward { animation: page-forward 420ms var(--ease) both; }
-.settings-panel.page-back { animation: page-back 420ms var(--ease) both; }
+.settings-side.page-swap > * { animation: fade-in 320ms var(--ease) both; }
+.settings-panel.page-forward { animation: page-forward 320ms var(--ease) both; }
+.settings-panel.page-back { animation: page-back 320ms var(--ease) both; }
 
 @keyframes page-forward {
   from { opacity: 0; transform: translateX(2.4vw); }
@@ -757,7 +760,7 @@ body.sheet-on .viewport {
 /* The list glides (transform) to keep the focused row in view */
 .settings-list {
   padding: 9vh 1.2vw;
-  transition: transform 550ms var(--ease);
+  transition: transform 360ms var(--ease);
 }
 
 .setting-section {
@@ -786,7 +789,7 @@ body.sheet-on .viewport {
 
 .settings.opening .setting,
 .settings.opening .setting-section {
-  animation: slide-in 650ms var(--ease) both;
+  animation: slide-in 480ms var(--ease) both;
   animation-delay: calc(80ms + var(--i, 0) * 28ms);
 }
 
@@ -971,7 +974,7 @@ body.sheet-on .viewport {
 [hidden] { display: none !important; }
 
 /* Shelf title glides in when focus moves to a different tile */
-.shelf-info.swap { animation: shelf-in 520ms var(--ease) both; }
+.shelf-info.swap { animation: shelf-in 360ms var(--ease) both; }
 
 @keyframes shelf-in {
   from { opacity: 0; transform: translateY(0.8vw); }
@@ -989,17 +992,17 @@ body.sheet-on .viewport {
   to { opacity: 1; }
 }
 
-body.booting .topbar { animation: fade-in 1200ms var(--ease) both; }
-body.booting .shelf-info { animation: rise 1000ms var(--ease) 80ms both; }
+body.booting .topbar { animation: fade-in 700ms var(--ease) both; }
+body.booting .shelf-info { animation: rise 620ms var(--ease) 80ms both; }
 
 body.booting .row {
-  animation: rise 1000ms var(--ease) both;
-  animation-delay: calc(200ms + var(--r, 0) * 110ms);
+  animation: rise 620ms var(--ease) both;
+  animation-delay: calc(120ms + var(--r, 0) * 75ms);
 }
 
 body.booting .tile-art {
-  animation: fade-in 900ms var(--ease) both;
-  animation-delay: calc(240ms + var(--r, 0) * 110ms + var(--i, 0) * 60ms);
+  animation: fade-in 580ms var(--ease) both;
+  animation-delay: calc(140ms + var(--r, 0) * 75ms + var(--i, 0) * 40ms);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -1092,10 +1095,10 @@ body.fast .shelf-info.swap { animation-duration: 160ms; }
 body.fast .tile-caption { transition-duration: 120ms; }
 
 /* Parallax: a logo lags behind its tile a touch, so the tile reads as layered */
-.tile:not(.full-bleed).nudge-right .tile-icon { animation: parallax-x 700ms var(--ease); --from: 0.45vw; }
-.tile:not(.full-bleed).nudge-left .tile-icon { animation: parallax-x 700ms var(--ease); --from: -0.45vw; }
-.tile:not(.full-bleed).nudge-down .tile-icon { animation: parallax-y 700ms var(--ease); --from: 0.35vw; }
-.tile:not(.full-bleed).nudge-up .tile-icon { animation: parallax-y 700ms var(--ease); --from: -0.35vw; }
+.tile:not(.full-bleed).nudge-right .tile-icon { animation: parallax-x 480ms var(--ease); --from: 0.45vw; }
+.tile:not(.full-bleed).nudge-left .tile-icon { animation: parallax-x 480ms var(--ease); --from: -0.45vw; }
+.tile:not(.full-bleed).nudge-down .tile-icon { animation: parallax-y 480ms var(--ease); --from: 0.35vw; }
+.tile:not(.full-bleed).nudge-up .tile-icon { animation: parallax-y 480ms var(--ease); --from: -0.35vw; }
 
 @keyframes parallax-x { from { transform: translateX(var(--from)); } to { transform: none; } }
 @keyframes parallax-y { from { transform: translateY(var(--from)); } to { transform: none; } }

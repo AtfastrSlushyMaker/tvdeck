@@ -74,6 +74,7 @@
   var messages = [];        // queued phone messages
   var settingsItems = [];
   var settingsIndex = 0;
+  var focusedSettingEl = null;
   var toastTimer = null;
   var navFocus = false;     // focus is in the top bar
   var navIndex = 0;
@@ -81,7 +82,7 @@
     { key: 'nav:settings', kind: 'tool', name: 'Settings', ref: 'settings' },
     { key: 'nav:phone', kind: 'tool', name: 'Send from phone', ref: 'phone' }
   ];
-  var glanceSignature = '';
+  var glanceSignature = JSON.stringify([null, []]);
   var IDLE_MS = 2500;               // focused tile starts its idle shimmer
   var CALM_MS = 6000;               // remote-key hints step aside
   var REPEAT_MS = 190;              // arrows closer than this = holding the key
@@ -215,8 +216,10 @@
     return node;
   }
 
-  // Icons seen before skip the fade, so re-rendering rows never flickers.
+  // Reuse successful artwork analysis when the same app appears in multiple
+  // rows or the rows are rebuilt. Failed reads can be retried later.
   var seenIcons = {};
+  var iconColors = {};
 
   // App art when there is an icon (caption shows on focus, like tvOS);
   // otherwise a line icon with the name inside the tile.
@@ -234,13 +237,15 @@
     var src = Platform.iconUrl(item.icon);
     if (src) {
       tile.classList.add('has-art');
+      if (iconColors[src]) item.color = iconColors[src];
       var img = el('img', seenIcons[src] ? 'tile-icon loaded' : 'tile-icon');
       img.alt = '';
       img.crossOrigin = 'anonymous';
       img.onload = function () {
         seenIcons[src] = true;
         img.classList.add('loaded');
-        var color = Icons.sample(img);
+        var color = iconColors[src] || Icons.sample(img);
+        if (color) iconColors[src] = color;
         item.img = img;
         item.color = color;
         if (color && color.fullBleed) {
@@ -332,6 +337,7 @@
           tile.addEventListener('click', function () { clickTile(row, i); });
           track.appendChild(tile);
         });
+        if (row.shift) track.style.transform = 'translateX(' + (-row.shift) + 'px)';
         rowEl.appendChild(track);
         row.trackEl = track;
       }
@@ -346,35 +352,31 @@
     updateFocus();
   }
 
+  var focusedRowEl = null;
+  var focusedTileEl = null;
+  var focusedNavEl = null;
+
   function updateFocus() {
-    els.navButtons.forEach(function (btn, i) {
-      btn.classList.toggle('focused', navFocus && mode === 'home' && i === navIndex);
-    });
-    rows.forEach(function (row, r) {
-      var active = r === rowIndex && mode === 'home' && !navFocus;
-      row.el.classList.toggle('active', active);
-      if (!row.trackEl) return;
-      var tiles = row.trackEl.children;
-      for (var i = 0; i < tiles.length; i++) {
-        tiles[i].classList.toggle('focused', active && i === row.col);
-        tiles[i].classList.toggle('moving', active && moving && i === row.col);
-      }
-      // Slide the row only when the focused tile would leave the screen.
-      var focusedTile = tiles[row.col];
-      if (focusedTile) {
-        var visible = row.trackEl.clientWidth - 2 * parseFloat(getComputedStyle(row.trackEl).paddingLeft);
-        var left = focusedTile.offsetLeft - tiles[0].offsetLeft;
-        var right = left + focusedTile.offsetWidth;
-        row.shift = row.shift || 0;
-        if (left < row.shift) row.shift = left;
-        else if (right > row.shift + visible) row.shift = right - visible;
-        row.trackEl.style.transform = 'translateX(' + (-row.shift) + 'px)';
-      }
-    });
+    var row = rows[rowIndex];
+    var active = row && mode === 'home' && !navFocus ? row : null;
+    var tiles = active && active.trackEl ? active.trackEl.children : null;
+    var tile = tiles ? tiles[active.col] : null;
+    var nav = navFocus && mode === 'home' ? els.navButtons[navIndex] : null;
+    var shift = active ? active.shift || 0 : 0;
+
+    // Read geometry before changing classes or transforms, and only measure
+    // the row being navigated instead of forcing layout for every row.
+    if (tile) {
+      var visible = active.trackEl.clientWidth - 2 * parseFloat(getComputedStyle(active.trackEl).paddingLeft);
+      var left = tile.offsetLeft - tiles[0].offsetLeft;
+      var right = left + tile.offsetWidth;
+      if (left < shift) shift = left;
+      else if (right > shift + visible) shift = right - visible;
+    }
 
     // The dock row shows the whole Top Shelf; further rows scroll it away,
     // in whole rows, only as far as needed to show the active row.
-    var activeRow = rows[rowIndex];
+    var activeRow = row;
     if (activeRow && els.rendered) {
       var pageTop = els.page.getBoundingClientRect().top;
       var topOf = function (r) { return rows[r].el.getBoundingClientRect().top - pageTop; };
@@ -393,9 +395,33 @@
           if (rowBottom - top <= viewH) { scrollY = top; break; }
         }
       }
-      els.page.style.transform = 'translateY(' + (-scrollY) + 'px)';
-      document.body.classList.toggle('scrolled', scrollY > 0);
     }
+
+    if (focusedNavEl !== nav) {
+      if (focusedNavEl) focusedNavEl.classList.remove('focused');
+      if (nav) nav.classList.add('focused');
+      focusedNavEl = nav;
+    }
+    var rowEl = active ? active.el : null;
+    if (focusedRowEl !== rowEl) {
+      if (focusedRowEl) focusedRowEl.classList.remove('active');
+      if (rowEl) rowEl.classList.add('active');
+      focusedRowEl = rowEl;
+    }
+    if (focusedTileEl !== tile) {
+      if (focusedTileEl) focusedTileEl.classList.remove('focused', 'moving');
+      if (tile) tile.classList.add('focused');
+      focusedTileEl = tile;
+    }
+    if (tile) {
+      tile.classList.toggle('moving', moving);
+      active.shift = shift;
+      var rowTransform = 'translateX(' + (-shift) + 'px)';
+      if (active.trackEl.style.transform !== rowTransform) active.trackEl.style.transform = rowTransform;
+    }
+    var pageTransform = 'translateY(' + (-scrollY) + 'px)';
+    if (els.page.style.transform !== pageTransform) els.page.style.transform = pageTransform;
+    document.body.classList.toggle('scrolled', scrollY > 0);
     updateShelf();
     renderHints();
   }
@@ -459,7 +485,9 @@
       ctx.fillRect(0, 0, next.width, next.height);
     }
     next.style.opacity = key ? '1' : '0';
+    next.classList.toggle('is-active', !!key);
     els.washes[washIndex].style.opacity = '0';
+    els.washes[washIndex].classList.remove('is-active');
     washIndex = 1 - washIndex;
   }
 
@@ -470,6 +498,19 @@
     node.classList.remove(className);
     void node.offsetWidth; // force reflow so the animation starts over
     node.classList.add(className);
+  }
+
+  // Restart frequent focus animations on successive frames without forcing
+  // synchronous layout for every remote press.
+  function replayOnFrame(node, className, requireFocus) {
+    node.classList.remove(className);
+    if (node.motionFrame) cancelAnimationFrame(node.motionFrame);
+    node.motionFrame = requestAnimationFrame(function () {
+      node.motionFrame = requestAnimationFrame(function () {
+        node.motionFrame = null;
+        if (!requireFocus || node.classList.contains('focused')) node.classList.add(className);
+      });
+    });
   }
 
   // Shows a layer, then lets its CSS transition run from the .is-out state.
@@ -504,7 +545,7 @@
     var tile = focusedTile();
     if (!tile) return;
     MOTION_CLASSES.forEach(function (c) { tile.classList.remove(c); });
-    replay(tile, name);
+    replayOnFrame(tile, name, true);
   }
 
   function nudge(dir) { playMotion('nudge-' + dir); Sounds.play('move'); }
@@ -540,10 +581,14 @@
     var row = rows[rowIndex];
     var item = currentItem();
     var title = item ? item.name : 'TVDeck';
-    if (els.shelfTitle.textContent !== title) replay(els.shelfInfo, 'swap');
-    els.shelfKind.textContent = navFocus ? 'TVDeck' : row ? row.title : '';
-    els.shelfTitle.textContent = title;
-    els.shelfMeta.textContent = item ? describe(item) : 'Press RED on any tile to pin it to the dock';
+    if (els.shelfTitle.textContent !== title) {
+      replayOnFrame(els.shelfInfo, 'swap', false);
+      els.shelfTitle.textContent = title;
+    }
+    var kind = navFocus ? 'TVDeck' : row ? row.title : '';
+    var meta = item ? describe(item) : 'Press RED on any tile to pin it to the dock';
+    if (els.shelfKind.textContent !== kind) els.shelfKind.textContent = kind;
+    if (els.shelfMeta.textContent !== meta) els.shelfMeta.textContent = meta;
     setWash(item);
   }
 
@@ -583,7 +628,8 @@
       if (row && row.apps && item) parts.push(hint('yellow', 'Hide app'));
       parts.push(hint('blue', 'Refresh'));
     }
-    els.hints.innerHTML = parts.join('');
+    var html = parts.join('');
+    if (els.hints.innerHTML !== html) els.hints.innerHTML = html;
   }
 
   function currentItem() {
@@ -705,7 +751,7 @@
     ]).then(function (results) {
       data.calendar = results[0];
       data.ha = results[1] ? results[1].entities : [];
-      var signature = JSON.stringify([data.calendar, data.ha]);
+      var signature = JSON.stringify([data.calendar && data.calendar.configured ? data.calendar : null, data.ha]);
       if (signature === glanceSignature) return;
       glanceSignature = signature;
       if (loaded && mode !== 'settings') {
@@ -721,7 +767,7 @@
     rowIndex = firstFocusableRow(0, 1);
     clearTimeout(loadingTimer);
     document.body.classList.remove('loading');
-    setTimeout(function () { document.body.classList.remove('booting'); }, 1800);
+    setTimeout(function () { document.body.classList.remove('booting'); }, 1300);
   }
 
   // Draw the home screen straight away from the last known apps; refresh()
@@ -738,11 +784,14 @@
 
   function refresh(announce) {
     lastRefresh = Date.now();
+    var previousApps = JSON.stringify([data.apps, data.inputs]);
+    var previousError = Platform.appsError();
     // TizenBrew can take seconds to list modules; don't hold the home
     // screen for it. That row fills in when the list arrives.
     Platform.listModules().then(function (modules) {
+      var changed = JSON.stringify(data.modules) !== JSON.stringify(modules);
       data.modules = modules;
-      if (loaded && mode === 'home') {
+      if (changed && loaded && mode === 'home') {
         buildRows();
         render();
       }
@@ -755,11 +804,15 @@
       data.apps = results[0];
       data.inputs = results[1];
       data.tizenbrew = results[2];
-      if (data.apps.length) Store.set('appsCache', { apps: data.apps, inputs: data.inputs });
+      var changed = previousApps !== JSON.stringify([data.apps, data.inputs]) || previousError !== Platform.appsError();
+      if (changed && data.apps.length) Store.set('appsCache', { apps: data.apps, inputs: data.inputs });
+      var needsRender = !loaded || changed || rowsDirty;
       rowsDirty = false;
-      buildRows();
-      markLoaded();
-      render();
+      if (needsRender) {
+        buildRows();
+        markLoaded();
+        render();
+      }
       loadGlance();
       if (announce) toast('Refreshed');
     });
@@ -1362,9 +1415,6 @@
   }
 
   function focusSetting() {
-    settingsItems.forEach(function (item, i) {
-      if (item.el) item.el.classList.toggle('focused', i === settingsIndex);
-    });
     // Glide the list so the focused row sits in the middle band of the panel.
     var node = settingsItems[settingsIndex] && settingsItems[settingsIndex].el;
     var panelH = els.settingsPanel.clientHeight;
@@ -1372,7 +1422,13 @@
     var target = node ? node.offsetTop + node.offsetHeight / 2 - panelH / 2 : 0;
     // Short pages sit centered; long ones keep the focused row mid-panel.
     var offset = listH <= panelH ? (listH - panelH) / 2 : Math.max(0, Math.min(target, listH - panelH));
-    els.settingsList.style.transform = 'translateY(' + (-offset) + 'px)';
+    if (focusedSettingEl !== node) {
+      if (focusedSettingEl) focusedSettingEl.classList.remove('focused');
+      if (node) node.classList.add('focused');
+      focusedSettingEl = node;
+    }
+    var transform = 'translateY(' + (-offset) + 'px)';
+    if (els.settingsList.style.transform !== transform) els.settingsList.style.transform = transform;
     renderHints();
   }
 
@@ -1384,7 +1440,7 @@
     animateIn(els.settings);
     replay(els.settings, 'opening');
     clearTimeout(els.settings.openTimer);
-    els.settings.openTimer = setTimeout(function () { els.settings.classList.remove('opening'); }, 1000);
+    els.settings.openTimer = setTimeout(function () { els.settings.classList.remove('opening'); }, 800);
     renderSettings();
     updateFocus();
   }
