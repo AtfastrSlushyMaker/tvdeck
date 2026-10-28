@@ -26,7 +26,7 @@
     "smart-tv"
   ],
   "scripts": {
-    "dev": "python3 -m http.server 5173 --directory app",
+    "dev": "python3 -m http.server 5173 --bind 127.0.0.1 --directory .",
     "service": "TV_HOST=${TV_HOST:-192.168.1.10} node service/service.js"
   },
   "license": "MIT"

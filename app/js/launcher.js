@@ -243,8 +243,18 @@
         var color = Icons.sample(img);
         item.img = img;
         item.color = color;
-        if (color && color.fullBleed) tile.classList.add('full-bleed');
-        else if (color) art.style.backgroundColor = Icons.tileBackground(color);
+        if (color && color.fullBleed) {
+          tile.classList.add('full-bleed');
+          if (color.cropSafe) tile.classList.add('safe-crop');
+          // Extend the artwork's edge colors behind squarer images without
+          // stretching or cropping the logo in the middle.
+          if (color.edgeStops) {
+            var stops = color.edgeStops.map(function (edge, index) {
+              return 'rgb(' + edge.join(',') + ') ' + Math.round(index * 100 / (color.edgeStops.length - 1)) + '%';
+            });
+            art.style.backgroundImage = 'linear-gradient(180deg, ' + stops.join(',') + ')';
+          }
+        } else if (color) art.style.backgroundColor = Icons.tileBackground(color);
         if (currentItem() === item) updateShelf();
       };
       img.onerror = function () {
@@ -428,8 +438,8 @@
   var washIndex = 0;
   var washKey = null;
 
-  // Paints a gradient from the focused art's average color into a 16x9
-  // canvas; upscaled to full screen it is a soft wash for almost no GPU cost.
+  // Paint once per focused app into a modest 16:9 canvas. A higher-resolution
+  // source avoids large blocks on TVs that upscale canvas with poor filtering.
   function setWash(item) {
     // Art still loading: keep the current wash rather than flashing to black.
     if (item && !item.color && item.icon && !item.iconFailed) return;
@@ -438,15 +448,15 @@
     washKey = key;
     var next = els.washes[1 - washIndex];
     var ctx = next.getContext('2d');
-    ctx.clearRect(0, 0, 16, 9);
+    ctx.clearRect(0, 0, next.width, next.height);
     if (key) {
       var c = item.color;
-      var gradient = ctx.createLinearGradient(0, 0, 16, 9);
+      var gradient = ctx.createLinearGradient(0, 0, next.width, next.height);
       gradient.addColorStop(0, 'rgb(' + c.r + ',' + c.g + ',' + c.b + ')');
       gradient.addColorStop(0.55, Icons.tileBackground(c));
       gradient.addColorStop(1, Icons.shiftHue(c, 38, 0.5));
       ctx.fillStyle = gradient;
-      ctx.fillRect(0, 0, 16, 9);
+      ctx.fillRect(0, 0, next.width, next.height);
     }
     next.style.opacity = key ? '1' : '0';
     els.washes[washIndex].style.opacity = '0';
@@ -552,6 +562,9 @@
     if (mode === 'settings') {
       var current = settingsItems[settingsIndex];
       parts.push(plainHint(settingsPage === 'root' ? 'OK to open · Back to close'
+        : settingsPage === 'about' ? 'OK to open GitHub · Back to return'
+        : settingsPage === 'categories' ? 'OK to choose a category · Back to return'
+        : settingsPage === 'categoryPicker' ? 'OK to select · Back to return'
         : current && current.type === 'choice' ? 'Left and right to choose · Back to return'
         : 'OK to change · Back to return'));
     } else if (mode === 'overlay') {
@@ -662,8 +675,8 @@
 
   function moveFavorite(step) {
     var row = rows[rowIndex];
-    var to = row.col + step;
-    if (to < 0 || to >= row.items.length) return;
+    if (row.items.length < 2) return;
+    var to = (row.col + step + row.items.length) % row.items.length;
     var favorites = row.items.map(function (item) { return item.key; });
     var moved = favorites.splice(row.col, 1)[0];
     favorites.splice(to, 0, moved);
@@ -872,8 +885,8 @@
 
   function handleOverlayKey(key) {
     if (key === KEY.LEFT || key === KEY.RIGHT) {
-      var next = overlay.index + (key === KEY.LEFT ? -1 : 1);
-      if (next < 0 || next >= overlay.buttons.length) return Sounds.play('edge');
+      if (overlay.buttons.length < 2) return Sounds.play('edge');
+      var next = (overlay.index + (key === KEY.LEFT ? -1 : 1) + overlay.buttons.length) % overlay.buttons.length;
       overlay.index = next;
       focusOverlayButton();
       Sounds.play('move');
@@ -895,14 +908,19 @@
     phone: { title: 'Phone & widgets', subtitle: 'Links, inputs, calendar, Home Assistant', glyph: 'phone' },
     web: { title: 'Web shortcuts', subtitle: 'Sites on your home screen', glyph: 'web' },
     layout: { title: 'Layout', subtitle: 'Rows, ambient screen and reset', glyph: 'app' },
-    about: { title: 'About', subtitle: 'The person behind TVDeck', glyph: 'brand' },
+    about: { title: 'About', subtitle: 'Creator and versions', glyph: 'brand' },
     categories: { title: 'App categories', subtitle: 'Choose where each app appears', glyph: 'app' },
+    categoryPicker: { title: 'Choose category', subtitle: '', glyph: 'app' },
     diagnostics: { title: 'Updates & diagnostics', subtitle: 'Build and service status', glyph: 'settings' }
   };
 
   var settingsPage = 'root';
   var diagnosticStatus = null;
+  var aboutRequestId = 0;
+  var aboutVersions = { app: 'Loading…', tizen: 'Loading…', tizenBrew: 'Loading…' };
   var rootIndex = 0;          // where the menu focus was before opening a page
+  var categoryApp = null;
+  var categoryIndex = 0;      // restore the app's position when leaving the picker
   var webDraft = { name: '', url: '' };
   var resetArmed = false;     // "Reset everything" needs a second OK
 
@@ -918,6 +936,10 @@
 
   function note(text) {
     return { type: 'note', label: text };
+  }
+
+  function infoRow(label, value) {
+    return { type: 'info', label: label, value: value };
   }
 
   function serviceRunning() {
@@ -977,15 +999,32 @@
       return data.apps.map(function (app) {
         var overrides = Store.get('appCategories');
         var selected = overrides[app.id] || 'Auto';
-        var options = [['Auto', 'Auto (' + Categories.categorize(app) + ')']];
-        Categories.options.forEach(function (name) { options.push([name, name]); });
-        var row = choice(app.name, options, selected, function (value) {
-          var updated = Store.get('appCategories');
-          if (value === 'Auto') delete updated[app.id]; else updated[app.id] = value;
-          Store.set('appCategories', updated);
+        var row = settingRow(app.name, selected === 'Auto' ? 'Auto · ' + Categories.categorize(app) : selected, function () {
+          categoryApp = app;
+          categoryIndex = settingsIndex;
+          settingsIndex = selected === 'Auto' ? 0 : Math.max(0, Categories.options.indexOf(selected) + 1);
+          goToPage('categoryPicker', false);
+          return true;
         });
-        row.compactChoice = true;
+        row.type = 'category-link';
         return row;
+      });
+    },
+
+    categoryPicker: function () {
+      if (!categoryApp) return [note('Choose an app first.')];
+      var selected = Store.get('appCategories')[categoryApp.id] || 'Auto';
+      var options = [{ value: 'Auto', label: 'Automatic · ' + Categories.categorize(categoryApp) }];
+      Categories.options.forEach(function (name) { options.push({ value: name, label: name }); });
+      return options.map(function (option) {
+        return settingRow(option.label, option.value === selected ? '✓' : '', function () {
+          var updated = Store.get('appCategories');
+          if (option.value === 'Auto') delete updated[categoryApp.id]; else updated[categoryApp.id] = option.value;
+          Store.set('appCategories', updated);
+          settingsIndex = categoryIndex;
+          goToPage('categories', true);
+          return true;
+        });
       });
     },
 
@@ -996,7 +1035,10 @@
           Platform.openInBrowser('https://github.com/AtfastrSlushyMaker').catch(function () {
             toast('Could not open GitHub');
           });
-        })
+        }),
+        infoRow('TVDeck version', aboutVersions.app),
+        infoRow('Tizen version', aboutVersions.tizen),
+        infoRow('TizenBrew version', aboutVersions.tizenBrew)
       ];
     },
 
@@ -1154,7 +1196,7 @@
     els.settingsGlyph.classList.toggle('is-brand', brand);
     els.settingsGlyph.innerHTML = brand ? '<img src="img/mark-256.png" alt="">' : Icons.svg(page.glyph);
     els.settingsTitle.textContent = page.title;
-    els.settingsSubtitle.textContent = page.subtitle;
+    els.settingsSubtitle.textContent = settingsPage === 'categoryPicker' && categoryApp ? categoryApp.name : page.subtitle;
 
     settingsItems = PAGE_BUILDERS[settingsPage]();
     els.settingsList.innerHTML = '';
@@ -1165,7 +1207,8 @@
       } else if (item.type === 'note') {
         node = el('div', 'setting-note', item.label);
       } else {
-        node = el('div', 'setting' + (item.type === 'link' ? ' setting-link' : '') +
+        node = el('div', 'setting' + (item.type === 'link' || item.type === 'category-link' ? ' setting-link' : '') +
+          (item.type === 'info' ? ' setting-info' : '') +
           (item.type === 'choice' ? ' setting-choice' : '') + (item.danger ? ' setting-danger' : ''));
         node.style.setProperty('--i', Math.min(els.settingsList.children.length, 14));
         node.appendChild(el('span', '', item.label));
@@ -1180,7 +1223,7 @@
           node.appendChild(input);
           item.input = input;
         } else if (item.type === 'choice') {
-          var group = el('span', 'choice-options' + (item.compactChoice ? ' compact-choice' : ''));
+          var group = el('span', 'choice-options');
           item.optionEls = item.options.map(function (opt) {
             var o = el('span', 'choice-option' + (opt[0] === item.value ? ' selected' : ''), opt[1]);
             group.appendChild(o);
@@ -1206,7 +1249,7 @@
   // focuses and activates it; clicking a selector option picks it.
   function bindSettingsPointer() {
     settingsItems.forEach(function (item, i) {
-      if (!item.el || item.type === 'section' || item.type === 'note') return;
+      if (!item.el || item.type === 'section' || item.type === 'note' || item.type === 'info') return;
       item.el.addEventListener('click', function (e) {
         if (!isSelectable(i)) return;
         settingsIndex = i;
@@ -1240,22 +1283,55 @@
     if (index !== current) changeChoice(index - current);
   }
 
-  // Left/Right stop at the ends; OK wraps around.
-  function changeChoice(step, wrap) {
+  // Selectors wrap at either end, like the other remote controls.
+  function changeChoice(step) {
     var item = settingsItems[settingsIndex];
     if (!item || item.type !== 'choice' || item.disabled) return false;
     var values = item.options.map(function (o) { return o[0]; });
-    var next = values.indexOf(item.value) + step;
-    if (wrap) next = (next + values.length) % values.length;
-    if (next < 0 || next >= values.length) return false;
+    if (values.length < 2) return false;
+    var current = Math.max(0, values.indexOf(item.value));
+    var next = ((current + step) % values.length + values.length) % values.length;
+    if (next === current) return false;
     item.value = values[next];
     item.optionEls.forEach(function (o, i) { o.classList.toggle('selected', i === next); });
     item.onChange(item.value);
     return true;
   }
 
+  // Each source is allowed to fail independently: an offline service must
+  // not hide the app version or leave the About page loading indefinitely.
+  function versionRequest(promise) {
+    return new Promise(function (resolve) {
+      var timer = setTimeout(function () { resolve(null); }, 5000);
+      promise.then(function (value) { clearTimeout(timer); resolve(value); }, function () {
+        clearTimeout(timer);
+        resolve(null);
+      });
+    });
+  }
+
+  function loadAboutVersions() {
+    var requestId = ++aboutRequestId;
+    aboutVersions = { app: 'Loading…', tizen: 'Loading…', tizenBrew: 'Loading…' };
+    function redraw() {
+      if (requestId === aboutRequestId && mode === 'settings' && settingsPage === 'about') renderSettings();
+    }
+    versionRequest(Platform.appVersion()).then(function (version) {
+      if (requestId !== aboutRequestId) return;
+      aboutVersions.app = version || 'Unavailable';
+      redraw();
+    });
+    versionRequest(Platform.service('/api/status')).then(function (status) {
+      if (requestId !== aboutRequestId) return;
+      aboutVersions.tizen = (status && status.tizenVersion) || Platform.tizenVersionFromUserAgent() || 'Unavailable';
+      aboutVersions.tizenBrew = (status && status.tizenBrewVersion) || 'Unavailable';
+      redraw();
+    });
+  }
+
   function goToPage(page, back) {
     settingsPage = page;
+    if (page === 'about') loadAboutVersions();
     renderSettings();
     if (page === 'diagnostics') {
       diagnosticStatus = null;
@@ -1273,11 +1349,13 @@
 
   function isSelectable(i) {
     var item = settingsItems[i];
-    return !!item && item.type !== 'section' && item.type !== 'note' && !item.disabled;
+    return !!item && item.type !== 'section' && item.type !== 'note' && item.type !== 'info' && !item.disabled;
   }
 
   function nextSelectable(from, step) {
-    for (var i = from + step; i >= 0 && i < settingsItems.length; i += step) {
+    var count = settingsItems.length;
+    for (var n = 1; n <= count; n++) {
+      var i = ((from + n * step) % count + count) % count;
       if (isSelectable(i)) return i;
     }
     return from;
@@ -1335,6 +1413,10 @@
   function settingsBack() {
     disarmReset();
     if (settingsPage === 'root') return closeSettings();
+    if (settingsPage === 'categoryPicker') {
+      settingsIndex = categoryIndex;
+      return goToPage('categories', true);
+    }
     settingsIndex = rootIndex;
     goToPage('root', true);
   }
@@ -1343,7 +1425,7 @@
     var item = settingsItems[settingsIndex];
     if (!item || item.disabled) return;
     if (item.type === 'choice') {
-      changeChoice(1, true);
+      changeChoice(1);
       return;
     }
     if (item.type === 'input') {
@@ -1547,10 +1629,16 @@
         }
         break;
       case KEY.LEFT:
-        if (row.col > 0) { row.col--; updateFocus(); nudge('left'); } else bump('left');
+        if (row.items.length > 1) {
+          row.col = (row.col - 1 + row.items.length) % row.items.length;
+          updateFocus(); nudge('left');
+        } else bump('left');
         break;
       case KEY.RIGHT:
-        if (row.col < row.items.length - 1) { row.col++; updateFocus(); nudge('right'); } else bump('right');
+        if (row.items.length > 1) {
+          row.col = (row.col + 1) % row.items.length;
+          updateFocus(); nudge('right');
+        } else bump('right');
         break;
       case KEY.UP:
       case KEY.CH_UP:
@@ -1568,7 +1656,13 @@
       case KEY.DOWN:
       case KEY.CH_DOWN:
         rowIndex = firstFocusableRow(rowIndex + 1, 1);
-        if (rowIndex === before) { bump('down'); break; }
+        if (rowIndex === before) {
+          // Continue the vertical loop through the top bar.
+          navFocus = true;
+          updateFocus();
+          Sounds.play('move');
+          break;
+        }
         updateFocus();
         nudge('down');
         break;
@@ -1603,20 +1697,26 @@
     switch (key) {
       case KEY.LEFT:
       case KEY.RIGHT:
-        var next = navIndex + (key === KEY.LEFT ? -1 : 1);
-        if (next < 0 || next >= NAV_ITEMS.length) return Sounds.play('edge');
-        navIndex = next;
+        navIndex = (navIndex + (key === KEY.LEFT ? -1 : 1) + NAV_ITEMS.length) % NAV_ITEMS.length;
         updateFocus();
         Sounds.play('move');
         break;
       case KEY.DOWN:
-      case KEY.BACK:
+        rowIndex = firstFocusableRow(0, 1);
         navFocus = false;
         updateFocus();
         nudge('down');
         break;
       case KEY.UP:
-        Sounds.play('edge');
+        rowIndex = firstFocusableRow(rows.length - 1, -1);
+        navFocus = false;
+        updateFocus();
+        nudge('up');
+        break;
+      case KEY.BACK:
+        navFocus = false;
+        updateFocus();
+        nudge('down');
         break;
       case KEY.ENTER:
         Sounds.play('select');

@@ -355,8 +355,12 @@ body.scrolled .shelf-status .ticker {
   height: 100%;
   max-width: none;
   max-height: none;
-  object-fit: cover;
+  /* Keep all of the app's artwork visible, including square TV icons. */
+  object-fit: contain;
 }
+
+/* Only trim artwork margins when the sampled crop area is background. */
+.tile.full-bleed.safe-crop .tile-icon { object-fit: cover; }
 
 .tile-glyph {
   position: absolute;
@@ -817,6 +821,9 @@ body.sheet-on .viewport {
   color: var(--text-2);
 }
 
+/* Read-only version details in About; only the GitHub link takes focus. */
+.setting-info { background: transparent; }
+
 .setting.focused .setting-value { color: rgba(0, 0, 0, 0.55); }
 
 .setting input {
@@ -847,11 +854,6 @@ body.sheet-on .viewport {
 
 /* Inline selector: Left/Right moves the highlight */
 .choice-options { display: flex; }
-
-.compact-choice .choice-option { display: none; }
-.compact-choice .choice-option.selected { display: inline-block; }
-.compact-choice::before { content: '\2039'; }
-.compact-choice::after { content: '\203A'; }
 
 .tile, .setting, .choice-option { cursor: default; }
 

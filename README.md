@@ -11,10 +11,23 @@ certificate or Tizen Studio is needed to install it.
 
 TVDeck is an independent project and is not affiliated with TizenBrew or Samsung.
 
+## Screenshots
+
+These screenshots show the desktop preview with sample apps, Samsung TV store
+artwork, and simulated Tizen and TizenBrew version information. Your TV's apps,
+artwork, and available versions may differ.
+
+![TVDeck home screen in the desktop preview](docs/screenshots/home.jpg)
+
+![TVDeck About screen in the desktop preview](docs/screenshots/about.jpg)
+
+![TVDeck category picker in the desktop preview](docs/screenshots/categories.jpg)
+
 ## Features
 
 - **Top bar**: Settings and Send from phone are one press of Up away from the dock, and the time and weather stay pinned while you scroll.
 - **Favorites row**: pin any app, input, TizenBrew module or web shortcut, and reorder them.
+- **Wraparound navigation**: move past either end of a row, menu or selector to continue from the other side.
 - **Recent row**: the last things you opened, most recent first.
 - **Inputs**: switch to HDMI 1–3 or Live TV from the launcher. Rename them or add more from your phone.
 - **All installed TV apps**: read straight from the TV and launched natively, with their real icons. Hide the ones you never use.
@@ -31,7 +44,8 @@ TVDeck is an independent project and is not affiliated with TizenBrew or Samsung
 - **Auto-start**: open TVDeck when TizenBrew starts, and start the phone service at boot.
 - **Guided settings**: a short menu of pages; options that can't be used yet are shown disabled with the reason and what unlocks them, and destructive actions ask for a second OK in place.
 - **Updates & diagnostics**: see the launcher and service build when known, check service connectivity and check GitHub for a newer launcher. Restart TVDeck to load a checked update; service updates happen on service restart.
-- **Personal categories**: Settings → App categories lets you override each app's automatic category or return it to Auto.
+- **About**: see the TVDeck package, Tizen platform and installed TizenBrew versions when available, alongside the creator's GitHub profile.
+- **Personal categories**: Settings → App categories lets you pick from a list for each app or return it to Automatic.
 - **Phone favorites**: with TVDeck open, scan its phone QR code to add, rename, remove and reorder favorite shortcuts or pin installed apps and inputs. Changes are sent to the running launcher; stale edits must be reloaded before saving.
 - **No ads, no telemetry**. The only outside requests are the weather lookup and the calendar and Home Assistant you configure.
 
@@ -91,7 +105,7 @@ The UI runs in a desktop browser with mock data:
 npm run dev
 ```
 
-Then open <http://localhost:5173> (add `?ambient` to see the ambient screen after 4 seconds). Keyboard: arrows, Enter, Esc (Back),
+Then open <http://localhost:5173/app/> (add `?ambient` to see the ambient screen after 4 seconds). Keyboard: arrows, Enter, Esc (Back),
 R/G/Y/B (color keys), PgUp/PgDn (channel up/down).
 
 To develop the phone page, widgets and inputs, run the service too:

@@ -33,33 +33,29 @@ var Platform = (function () {
   };
   var NEVER_SHOW = { 'xvvl3S1bvH.TizenBrewStandalone': true }; // TizenBrew itself
 
-  // Desktop-only stand-ins for app artwork so the UI can be judged off the TV.
-  function mockArt(bg, fg, text, size) {
-    var svg = '<svg xmlns="http://www.w3.org/2000/svg" width="400" height="240">' +
-      '<rect width="400" height="240" fill="' + bg + '"/>' +
-      '<text x="200" y="138" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" ' +
-      'font-weight="700" font-size="' + (size || 44) + '" fill="' + fg + '">' + text + '</text></svg>';
-    return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+  // Desktop-only artwork. The TV still uses the icons reported by installed apps.
+  function demoArt(name) {
+    return (window.TVDECK_BASE || '') + 'img/demo/' + name + '.png';
   }
 
   var MOCK_APPS = [
-    { id: '3201907018807', name: 'Netflix', icon: mockArt('#000', '#e50914', 'NETFLIX', 52) },
-    { id: '111299001912', name: 'YouTube', icon: mockArt('#fff', '#ff0000', 'YouTube') },
-    { id: '3201910019365', name: 'Prime Video', icon: mockArt('#0f171e', '#00a8e1', 'prime video') },
-    { id: '3201901017640', name: 'Disney+', icon: mockArt('#0b1a4a', '#fff', 'Disney+', 50) },
-    { id: '3201606009684', name: 'Spotify', icon: mockArt('#1db954', '#000', 'Spotify') },
-    { id: '3202010022079', name: 'Stremio', icon: mockArt('#2a1a5e', '#fff', 'Stremio') },
-    { id: '3201807016597', name: 'Apple TV', icon: mockArt('#1c1c1e', '#fff', 'tv', 64) },
+    { id: '3201907018807', name: 'Netflix', icon: demoArt('netflix') },
+    { id: '111299001912', name: 'YouTube', icon: demoArt('youtube') },
+    { id: '3201910019365', name: 'Prime Video', icon: demoArt('prime-video') },
+    { id: '3201901017640', name: 'Disney+', icon: demoArt('disney-plus') },
+    { id: '3201606009684', name: 'Spotify', icon: demoArt('spotify') },
+    { id: '3202306031311', name: 'Stremio', icon: demoArt('stremio') },
+    { id: '3201807016597', name: 'Apple TV', icon: demoArt('apple-tv') },
     { id: 'com.samsung.tv.store', name: 'Apps' },
-    { id: 'org.tizen.browser', name: 'Internet' },
-    { id: 'mock.anghami', name: 'Anghami', icon: mockArt('#7c1fd1', '#fff', 'anghami') },
-    { id: 'mock.dazn', name: 'DAZN', icon: mockArt('#0c161c', '#f8fc00', 'DAZN', 64) },
-    { id: 'mock.bein', name: 'beIN SPORTS', icon: mockArt('#5c2d91', '#fff', 'beIN', 60) },
-    { id: 'mock.twitch', name: 'Twitch', icon: mockArt('#9146ff', '#fff', 'twitch') },
-    { id: 'mock.geforce', name: 'GeForce NOW', icon: mockArt('#111', '#76b900', 'GEFORCE NOW', 34) },
-    { id: 'mock.aljazeera', name: 'Al Jazeera', icon: mockArt('#fff', '#c48a1f', 'Al Jazeera', 40) },
-    { id: 'mock.smartthings', name: 'SmartThings' },
-    { id: 'mock.gallery', name: 'Gallery' }
+    { id: 'org.tizen.browser', name: 'Internet', icon: demoArt('internet') },
+    { id: 'mock.anghami', name: 'Anghami' },
+    { id: 'mock.dazn', name: 'DAZN', icon: demoArt('dazn') },
+    { id: 'mock.bein', name: 'beIN SPORTS' },
+    { id: 'mock.twitch', name: 'Twitch', icon: demoArt('twitch') },
+    { id: 'mock.geforce', name: 'GeForce NOW', icon: demoArt('geforce-now') },
+    { id: 'mock.aljazeera', name: 'Al Jazeera' },
+    { id: 'mock.smartthings', name: 'SmartThings', icon: demoArt('smartthings') },
+    { id: 'mock.gallery', name: 'Gallery', icon: demoArt('gallery') }
   ];
 
   var MOCK_MODULES = [
@@ -222,6 +218,28 @@ var Platform = (function () {
 
   /* ---------- TVDeck service (service/service.js) ---------- */
 
+  // Read the manifest belonging to the same build that supplied this page's
+  // scripts. This works for both TizenBrew's module proxy and pinned builds.
+  function appVersion() {
+    return fetch((window.TVDECK_BASE || '') + '../package.json').then(function (res) {
+      if (!res.ok) throw new Error('TVDeck manifest unavailable');
+      return res.json();
+    }).then(function (manifest) {
+      if (!manifest || typeof manifest.version !== 'string' || !manifest.version.trim()) {
+        throw new Error('TVDeck version unavailable');
+      }
+      return manifest.version.trim();
+    });
+  }
+
+  // When the service is unavailable, the TV browser can still report its
+  // platform version in the user agent. Desktop previews do not invent one.
+  function tizenVersionFromUserAgent() {
+    if (!IS_TV) return null;
+    var match = /\bTizen[\s/]([0-9]+(?:\.[0-9]+)*)/i.exec(navigator.userAgent);
+    return match ? match[1] : null;
+  }
+
   var SERVICE = 'http://127.0.0.1:8085';
   var serviceUp = false;
 
@@ -324,6 +342,8 @@ var Platform = (function () {
     launchModule: launchModule,
     openUrl: openUrl,
     openInBrowser: openInBrowser,
+    appVersion: appVersion,
+    tizenVersionFromUserAgent: tizenVersionFromUserAgent,
     service: service,
     sendKey: sendKey,
     iconUrl: iconUrl,

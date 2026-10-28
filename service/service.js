@@ -538,6 +538,36 @@ function tvdeckService() {
     });
   }
 
+  // Read the installed versions, rather than the latest release on GitHub.
+  // The service runs inside TizenBrew and has access to these Tizen APIs.
+  function runtimeVersions() {
+    var versions = { tizenVersion: null, tizenBrewVersion: null };
+    if (typeof tizen === 'undefined') return versions;
+    try {
+      if (tizen.systeminfo && tizen.systeminfo.getCapability) {
+        var version = tizen.systeminfo.getCapability('http://tizen.org/feature/platform.version');
+        if (typeof version === 'string' && version.trim()) versions.tizenVersion = version.trim();
+      }
+    } catch (e) { /* capability unavailable on this device */ }
+    try {
+      if (tizen.application && tizen.application.getAppInfo) {
+        var info = tizen.application.getAppInfo('xvvl3S1bvH.TizenBrewStandalone');
+        if (info && typeof info.version === 'string' && info.version.trim()) versions.tizenBrewVersion = info.version.trim();
+      }
+    } catch (e) { /* TizenBrew may have a different application ID */ }
+    if (!versions.tizenBrewVersion) {
+      try {
+        // Some builds expose the current TizenBrew service instead of the
+        // standalone app ID. Only use it when its name identifies TizenBrew.
+        var current = tizen.application.getAppInfo();
+        if (current && /tizenbrew/i.test(current.name || '') && typeof current.version === 'string' && current.version.trim()) {
+          versions.tizenBrewVersion = current.version.trim();
+        }
+      } catch (e) { /* not exposed by this runtime */ }
+    }
+    return versions;
+  }
+
   function launchApp(id) {
     if (!HAS_TIZEN) return Promise.reject(new Error('Tizen API unavailable'));
     return new Promise(function (resolve, reject) {
@@ -745,9 +775,12 @@ function tvdeckService() {
     }
     if (route === 'GET /api/tizenbrew') return send(res, 200, tizenbrewConfig());
     if (route === 'GET /api/status') {
+      var versions = runtimeVersions();
       return send(res, 200, {
         node: typeof process !== 'undefined' ? process.version : null,
         tizen: HAS_TIZEN,
+        tizenVersion: versions.tizenVersion,
+        tizenBrewVersion: versions.tizenBrewVersion,
         build: typeof TVDECK_SERVICE_BUILD === 'string' ? TVDECK_SERVICE_BUILD : null,
         remote: remote.ready,
         ip: deviceIP

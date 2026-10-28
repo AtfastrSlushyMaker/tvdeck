@@ -29,25 +29,64 @@ var Icons = (function () {
   }
 
   var canvas = document.createElement('canvas');
-  canvas.width = canvas.height = 8;
+  var SAMPLE_SIZE = 32;
+  canvas.width = canvas.height = SAMPLE_SIZE;
   var ctx = canvas.getContext('2d');
+
+  // A square TV icon can fill a wide tile if the top and bottom that would
+  // be cropped contain only background. Keep a small safety margin around
+  // any visible artwork; when in doubt, show the entire image instead.
+  function canCropBackground(img, pixels) {
+    var width = img.naturalWidth;
+    var height = img.naturalHeight;
+    var tileAspect = 15.9 / 9.55;
+    if (!width || !height || width / height >= tileAspect) return false;
+    var trim = Math.ceil((1 - (width / height) / tileAspect) * SAMPLE_SIZE / 2) + 1;
+    for (var y = 0; y < SAMPLE_SIZE; y++) {
+      if (y >= trim && y < SAMPLE_SIZE - trim) continue;
+      var left = y * SAMPLE_SIZE * 4;
+      var right = (y * SAMPLE_SIZE + SAMPLE_SIZE - 1) * 4;
+      for (var x = 0; x < SAMPLE_SIZE; x++) {
+        var pixel = (y * SAMPLE_SIZE + x) * 4;
+        if (pixels[pixel + 3] < 200) return false;
+        for (var c = 0; c < 3; c++) {
+          var background = (pixels[left + c] + pixels[right + c]) / 2;
+          if (Math.abs(pixels[pixel + c] - background) > 52) return false;
+          if (x && Math.abs(pixels[pixel + c] - pixels[pixel - 4 + c]) > 18) return false;
+        }
+      }
+    }
+    return true;
+  }
 
   // Average color of the opaque pixels, and whether the art is full-bleed
   // (opaque corners) or a logo on transparency. Returns null if the image
   // cannot be read (cross-origin without CORS).
   function sample(img) {
     try {
-      ctx.clearRect(0, 0, 8, 8);
-      ctx.drawImage(img, 0, 0, 8, 8);
-      var px = ctx.getImageData(0, 0, 8, 8).data;
+      ctx.clearRect(0, 0, SAMPLE_SIZE, SAMPLE_SIZE);
+      ctx.drawImage(img, 0, 0, SAMPLE_SIZE, SAMPLE_SIZE);
+      var px = ctx.getImageData(0, 0, SAMPLE_SIZE, SAMPLE_SIZE).data;
       var r = 0, g = 0, b = 0, n = 0;
       for (var i = 0; i < px.length; i += 4) {
         if (px[i + 3] < 128) continue;
         r += px[i]; g += px[i + 1]; b += px[i + 2]; n++;
       }
-      var corners = [0, 7, 56, 63].every(function (p) { return px[p * 4 + 3] > 200; });
+      var cornerPixels = [0, SAMPLE_SIZE - 1, SAMPLE_SIZE * (SAMPLE_SIZE - 1), SAMPLE_SIZE * SAMPLE_SIZE - 1];
+      var corners = cornerPixels.every(function (p) { return px[p * 4 + 3] > 200; });
       if (!n) return null;
-      return { r: Math.round(r / n), g: Math.round(g / n), b: Math.round(b / n), fullBleed: corners };
+      var sample = { r: Math.round(r / n), g: Math.round(g / n), b: Math.round(b / n), fullBleed: corners };
+      if (corners) {
+        sample.cropSafe = canCropBackground(img, px);
+        sample.edgeStops = [];
+        for (var step = 0; step < 8; step++) {
+          var y = Math.round(step * (SAMPLE_SIZE - 1) / 7);
+          sample.edgeStops.push([0, 1, 2].map(function (channel) {
+            return Math.round((px[(y * SAMPLE_SIZE) * 4 + channel] + px[(y * SAMPLE_SIZE + SAMPLE_SIZE - 1) * 4 + channel]) / 2);
+          }));
+        }
+      }
+      return sample;
     } catch (e) {
       return null;
     }
