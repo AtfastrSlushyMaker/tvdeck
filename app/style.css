@@ -65,17 +65,34 @@ html, body {
   width: 120%;
   height: 120%;
   opacity: 0;
-  transition: opacity 1100ms var(--ease);
-  animation: drift 26s var(--sine) infinite alternate;
+  transition: opacity 900ms var(--ease);
+  animation: drift 32s var(--sine) infinite alternate;
   animation-play-state: paused;
 }
 
 .wash.is-active { animation-play-state: running; }
 
-/* The wash never sits still: a slow drift and swell, like light moving */
+/* A slow, restrained change in the position of the app's color. */
 @keyframes drift {
-  from { transform: translate(-3%, -2%) scale(1); }
-  to { transform: translate(3%, 2.5%) scale(1.1); }
+  from { transform: translate(-2%, -1.2%) scale(1.03); }
+  to { transform: translate(2%, 1.2%) scale(1.06); }
+}
+
+/* One broad, faint canvas highlight moves independently of the color wash.
+   Only its transform animates, with no blur or repaint loop. */
+.backdrop-light {
+  position: absolute;
+  top: -18%;
+  left: -8%;
+  width: 88%;
+  height: 68%;
+  opacity: 0.5;
+  animation: light-drift 38s var(--sine) infinite alternate;
+}
+
+@keyframes light-drift {
+  from { transform: translate(-5%, 2%) scale(0.98); }
+  to { transform: translate(18%, -1%) scale(1.04); }
 }
 
 .backdrop-shade {
@@ -1009,8 +1026,10 @@ body.booting .tile-art {
   *, *::before, *::after {
     animation-duration: 1ms !important;
     animation-delay: 0s !important;
+    animation-iteration-count: 1 !important;
     transition-duration: 1ms !important;
   }
+  .wash, .backdrop-light { animation: none !important; }
 }
 
 /* Ambient screen: launcher fades away, the wash drifts through app colors */

@@ -55,6 +55,7 @@
     shelfTitle: document.getElementById('shelf-title'),
     shelfMeta: document.getElementById('shelf-meta'),
     washes: document.querySelectorAll('.wash'),
+    backdropLight: document.querySelector('.backdrop-light'),
     settingsGlyph: document.getElementById('settings-glyph'),
     settingsTitle: document.getElementById('settings-title'),
     settingsSubtitle: document.getElementById('settings-subtitle'),
@@ -463,32 +464,94 @@
 
   var washIndex = 0;
   var washKey = null;
+  var washTimer = null;
+  var washPending = null;
+  var washBusyUntil = 0;
+  var NEUTRAL_WASH = { r: 31, g: 36, b: 44 };
+  var reducedMotion = window.matchMedia ? window.matchMedia('(prefers-reduced-motion: reduce)') : null;
+
+  // Draw the light once at the same resolution as the washes. This avoids
+  // animating a CSS gradient on TV graphics hardware and keeps its edges soft.
+  function paintBackdropLight() {
+    var canvas = els.backdropLight;
+    if (!canvas) return; // The HTML can briefly be older than this script in the CDN cache.
+    var ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    ctx.save();
+    ctx.scale(canvas.width / 2, canvas.height / 2);
+    var light = ctx.createRadialGradient(1, 1, 0, 1, 1, 1);
+    light.addColorStop(0, 'rgba(240,245,255,0.11)');
+    light.addColorStop(0.42, 'rgba(240,245,255,0.035)');
+    light.addColorStop(0.72, 'rgba(240,245,255,0)');
+    ctx.fillStyle = light;
+    ctx.fillRect(0, 0, 2, 2);
+    ctx.restore();
+  }
+
+  function cancelPendingWash() {
+    clearTimeout(washTimer);
+    washTimer = null;
+    washPending = null;
+  }
+
+  // Keep very bright artwork from washing out the white navigation text.
+  // A little neutral color also gives black and white icons a quiet backdrop.
+  function washTone(color) {
+    if (!color) return NEUTRAL_WASH;
+    var scale = Math.min(1, 108 / Math.max(color.r, color.g, color.b, 1));
+    return {
+      r: Math.round(color.r * scale * 0.85 + NEUTRAL_WASH.r * 0.15),
+      g: Math.round(color.g * scale * 0.85 + NEUTRAL_WASH.g * 0.15),
+      b: Math.round(color.b * scale * 0.85 + NEUTRAL_WASH.b * 0.15)
+    };
+  }
 
   // Paint once per focused app into a modest 16:9 canvas. A higher-resolution
   // source avoids large blocks on TVs that upscale canvas with poor filtering.
   function setWash(item) {
     // Art still loading: keep the current wash rather than flashing to black.
-    if (item && !item.color && item.icon && !item.iconFailed) return;
-    var key = item && item.color ? item.key : null;
-    if (key === washKey) return;
+    if (item && !item.color && item.icon && !item.iconFailed) {
+      cancelPendingWash();
+      return;
+    }
+    var key = item && item.color ? item.key : 'neutral';
+    if (key === washKey) {
+      cancelPendingWash();
+      return;
+    }
+
+    // Don't repaint a canvas while it is still fading out. Coalesce quick
+    // remote presses to the latest selection instead of flashing old colors.
+    var stillFading = !(reducedMotion && reducedMotion.matches);
+    var delay = stillFading ? washBusyUntil - Date.now() : 0;
+    if (delay > 0) {
+      washPending = item;
+      if (!washTimer) washTimer = setTimeout(function () {
+        var pending = washPending;
+        washTimer = null;
+        washPending = null;
+        setWash(pending);
+      }, delay + 16);
+      return;
+    }
+    cancelPendingWash();
     washKey = key;
     var next = els.washes[1 - washIndex];
     var ctx = next.getContext('2d');
     ctx.clearRect(0, 0, next.width, next.height);
-    if (key) {
-      var c = item.color;
-      var gradient = ctx.createLinearGradient(0, 0, next.width, next.height);
-      gradient.addColorStop(0, 'rgb(' + c.r + ',' + c.g + ',' + c.b + ')');
-      gradient.addColorStop(0.55, Icons.tileBackground(c));
-      gradient.addColorStop(1, Icons.shiftHue(c, 38, 0.5));
-      ctx.fillStyle = gradient;
-      ctx.fillRect(0, 0, next.width, next.height);
-    }
-    next.style.opacity = key ? '1' : '0';
-    next.classList.toggle('is-active', !!key);
+    var c = washTone(item && item.color);
+    var gradient = ctx.createLinearGradient(0, 0, next.width, next.height);
+    gradient.addColorStop(0, 'rgb(' + c.r + ',' + c.g + ',' + c.b + ')');
+    gradient.addColorStop(0.55, Icons.tileBackground(c));
+    gradient.addColorStop(1, Icons.shiftHue(c, 22, 0.5));
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, next.width, next.height);
+    next.style.opacity = '1';
+    next.classList.add('is-active');
     els.washes[washIndex].style.opacity = '0';
     els.washes[washIndex].classList.remove('is-active');
     washIndex = 1 - washIndex;
+    washBusyUntil = Date.now() + (stillFading ? (document.body.classList.contains('ambient-on') ? 3500 : 900) : 0);
   }
 
   /* ---------- Motion helpers ---------- */
@@ -1863,6 +1926,7 @@
 
   /* ---------- Boot ---------- */
 
+  paintBackdropLight();
   els.settingsGlyph.innerHTML = Icons.svg('settings');
   els.navButtons.forEach(function (btn, i) {
     btn.querySelector('.nav-icon').innerHTML = Icons.svg(btn.querySelector('.nav-icon').getAttribute('data-icon'));

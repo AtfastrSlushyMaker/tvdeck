@@ -16,6 +16,7 @@ var Platform = (function () {
   var HAS_TIZEN = typeof tizen !== 'undefined' && !!tizen.application;
   var IS_TV = HAS_TIZEN || /Tizen|SMART-TV/i.test(navigator.userAgent);
   var SELF_PACKAGE = 'tvdeck';
+  var SELF_NPM_PACKAGE = '@malek.bsaissa/tvdeck';
   var TB_SOCKET = 'ws://localhost:8081';
   var TB_EVENTS = { GetModules: 4, LaunchModule: 5, ModuleAction: 10 };
 
@@ -274,10 +275,10 @@ var Platform = (function () {
 
   /* ---------- TizenBrew auto-launch ---------- */
 
-  // e.g. "npm/tvdeck" or "gh/user/tvdeck", from /module/<encoded name>/app/index.html
+  // e.g. "npm/@malek.bsaissa/tvdeck" or "gh/user/tvdeck", from the module URL.
   function selfModuleName() {
     var match = /\/module\/([^/]+)\//.exec(location.pathname);
-    return match ? decodeURIComponent(match[1]) : 'npm/' + SELF_PACKAGE;
+    return match ? decodeURIComponent(match[1]) : 'npm/' + SELF_NPM_PACKAGE;
   }
 
   function tizenbrewAction(action, module) {

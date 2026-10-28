@@ -1,6 +1,6 @@
 {
-  "name": "tvdeck",
-  "version": "0.2.0",
+  "name": "@malek.bsaissa/tvdeck",
+  "version": "0.2.1",
   "description": "TVDeck: a fast, ad-free home launcher for Samsung Tizen TVs, runs as a TizenBrew app module.",
   "author": "Malek Bsaissa",
   "packageType": "app",
